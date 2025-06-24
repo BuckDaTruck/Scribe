@@ -11,7 +11,7 @@ from gpiozero import Button, PWMLED
 
 # === CONFIG ===
 DEVICE_ID = hex(uuid.getnode())[-6:]
-AUDIO_DIR = '/home/pi/audio'
+AUDIO_DIR = os.path.expanduser('~/audio')
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 HIGHLIGHT_CSV = os.path.join(AUDIO_DIR, f'highlights_{DEVICE_ID}.csv')
