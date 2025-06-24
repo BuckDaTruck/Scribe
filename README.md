@@ -28,7 +28,7 @@ This project transforms a Raspberry Pi Zero 2 W into a field-deployable audio re
 - 2x Push Buttons
 - 18650 Battery (or USB power)
 
-Wiring details can be found in [`Wiring Instructions`](./Wiring%20Instructions.md).
+Wiring details can be found in [`Wiring Instructions`](./Device/Wiring_Instructions.md).
 
 ---
 
@@ -40,7 +40,7 @@ All setup can be done by preparing an SD card with:
 - Preloaded project files
 - Wi-Fi and SSH configured
 
-Detailed steps are provided in [`Setup Instructions`](./Setup%20Instructions.md).
+Detailed steps are provided in [`Setup Instructions`](./Device/Firmware/Setup_Instructions.md).
 
 ---
 
