@@ -22,6 +22,8 @@ BUTTON_HIGHLIGHT = Button(17, bounce_time=0.1)
 BUTTON_UPLOAD = Button(27, bounce_time=0.1)
 CHUNK_DURATION = 30 * 60  # 30 minutes
 MAX_UPLOADED = 5
+last_upload_time = 0
+UPLOAD_DEBOUNCE_SEC = 2.0  # Prevent triggering more than once every 2 seconds
 
 # === LOGGING SETUP ===
 LOG_PATH = os.path.join(SCRIPT_DIR, 'scribe.log')
@@ -167,9 +169,16 @@ def on_highlight_pressed():
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
-    global tap_count, last_tap_time, idle_mode, pulse_event
+    global tap_count, last_tap_time, idle_mode, pulse_event, last_upload_time
 
     now = time.time()
+    
+    # Manual debounce protection
+    if now - last_upload_time < UPLOAD_DEBOUNCE_SEC:
+        log("[UPLOAD] Ignored: Debounced repeated press.")
+        return
+    last_upload_time = now
+
     if now - last_tap_time > 1.0:
         tap_count = 1
     else:
