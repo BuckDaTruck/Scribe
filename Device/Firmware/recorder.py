@@ -231,12 +231,61 @@ def auto_uploader():
     while True:
         time.sleep(CHUNK_DURATION)
         upload_files()
+def startup_cleanup_upload():
+    log("[STARTUP] Checking for leftover recordings to upload...")
+
+    leftover_wavs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.wav"))
+    leftover_csvs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv"))
+
+    files = {}
+
+    for path in leftover_csvs:
+        if not path.endswith("_uploaded.csv"):
+            log(f"[STARTUP] Found leftover CSV: {path}")
+            files[os.path.basename(path)] = open(path, 'rb')
+
+    for path in leftover_wavs:
+        if not path.endswith("_uploaded.wav"):
+            log(f"[STARTUP] Found leftover WAV: {path}")
+            files[os.path.basename(path)] = open(path, 'rb')
+
+    if not files:
+        log("[STARTUP] No leftover files to upload.")
+        return
+
+    try:
+        set_led(0, 0, 1)  # Solid blue
+        data = {'api_key': API_KEY}
+        log("[STARTUP] Uploading leftover files...")
+        response = requests.post(UPLOAD_URL, files=files, data=data)
+        log(f"[STARTUP] Upload response: {response.status_code} - {response.text}")
+
+        if response.status_code == 200:
+            # Delete successfully uploaded files
+            for f in list(files.keys()):
+                full_path = os.path.join(AUDIO_DIR, f)
+                log(f"[STARTUP] Deleting uploaded file: {full_path}")
+                try:
+                    os.remove(full_path)
+                except Exception as e:
+                    log(f"[STARTUP] Error deleting file: {e}", level='error')
+            quick_flash(b=1)
+        else:
+            log("[STARTUP] Server error during upload.", level='error')
+            quick_flash(r=1)
+
+        set_led(0, 0, 0)
+    except Exception as e:
+        log(f"[STARTUP] Upload failed: {e}", level='error')
+        quick_flash(r=1)
+        set_error_led()
 
 # === MAIN LOOP ===
 def main():
     global current_proc
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
     startup_sequence()
+    startup_cleanup_upload()
     threading.Thread(target=auto_uploader, daemon=True).start()
 
     while True:
