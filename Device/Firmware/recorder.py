@@ -11,7 +11,7 @@ import logging
 from gpiozero import Button, PWMLED
 
 # === CONFIG ===
-DEVICE_ID = hex(uuid.getnode())[-6:]
+DEVICE_ID = "Buckley_Scribe_v1.1_"
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -127,7 +127,7 @@ current_csv_path = None
 def start_new_recording():
     global current_arecord_proc, current_lame_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    filename = f"Scribe_v1.1_{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.mp3"
+    filename = f"{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.mp3"
     filepath = os.path.join(AUDIO_DIR, filename)
     current_csv_path = filepath.replace('.mp3', '.csv')
     session_part += 1
@@ -169,24 +169,17 @@ def on_highlight_pressed():
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
-    global tap_count, last_tap_time, idle_mode, pulse_event, last_upload_time
-
+    global idle_mode, pulse_event, last_upload_time, session_id, session_part
     now = time.time()
-    
+
     # Manual debounce protection
     if now - last_upload_time < UPLOAD_DEBOUNCE_SEC:
         log("[UPLOAD] Ignored: Debounced repeated press.")
         return
     last_upload_time = now
 
-    if now - last_tap_time > 1.0:
-        tap_count = 1
-    else:
-        tap_count += 1
-    last_tap_time = now
-
-    if tap_count == 3:
-        log("[UPLOAD] Triple tap detected. Stopping recording and entering idle mode.")
+    if not idle_mode:
+        log("[UPLOAD] Upload button pressed. Stopping and entering idle mode.")
         if current_arecord_proc:
             current_arecord_proc.terminate()
             current_arecord_proc.wait()
@@ -196,18 +189,17 @@ def on_upload_pressed():
         upload_files()
         idle_mode = True
         pulse_event.clear()
+        pulse_event = threading.Event()
         threading.Thread(target=idle_led_pulse, daemon=True).start()
-    elif tap_count == 1:
-        log("[UPLOAD] Single tap: normal upload and resume.")
-        if current_arecord_proc:
-            current_arecord_proc.terminate()
-            current_arecord_proc.wait()
-        if current_lame_proc:
-            current_lame_proc.terminate()
-            current_lame_proc.wait()
-        upload_files()
-        if not idle_mode:
-            start_new_recording()
+    else:
+        log("[UPLOAD] Upload button pressed. Starting new recording session.")
+        pulse_event.set()  # stop pulsing
+        set_led(0, 0, 0)
+        idle_mode = False
+        session_id = uuid.uuid4().hex[:8]
+        session_part = 1
+        start_new_recording()
+
 
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed = on_upload_pressed
