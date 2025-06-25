@@ -88,13 +88,14 @@ def startup_sequence():
         time.sleep(0.2)
     set_led(0, 0, 0)
     time.sleep(0.3)
-    set_led(1, 1, 1)  # white flash
+    set_led(1, 1, 1)
     time.sleep(0.2)
     set_led(0, 0, 0)
     log("[SYSTEM] LED sequence complete.")
 
 # === STATE ===
-current_proc = None
+current_arecord_proc = None
+current_lame_proc = None
 highlight_lock = threading.Lock()
 highlighting = []
 highlight_led_stop = None
@@ -104,7 +105,7 @@ current_csv_path = None
 
 # === AUDIO RECORDING ===
 def start_new_recording():
-    global current_proc, session_part, current_csv_path
+    global current_arecord_proc, current_lame_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     filename = f"Scribe_v1.1_{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.mp3"
     filepath = os.path.join(AUDIO_DIR, filename)
@@ -112,22 +113,18 @@ def start_new_recording():
     session_part += 1
 
     log(f"[INFO] Starting MP3 recording: {filename}")
-    current_proc = subprocess.Popen([
+    current_arecord_proc = subprocess.Popen([
         'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', '16000', '-c', '1',
         '-t', 'raw', '-q', '-',
     ], stdout=subprocess.PIPE)
 
-    # Pipe raw audio to LAME to encode to MP3
-    mp3_proc = subprocess.Popen([
+    current_lame_proc = subprocess.Popen([
         'lame', '-r', '-s', '16', '-', filepath
-    ], stdin=current_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ], stdin=current_arecord_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    current_proc.stdout.close()  # allow arecord to receive a SIGPIPE if lame exits
-    current_proc = mp3_proc
-
-    set_led(r=0, g=1, b=0)  # solid green
+    current_arecord_proc.stdout.close()
+    set_led(r=0, g=1, b=0)
     return filepath
-
 
 # === HIGHLIGHT BUTTON ===
 def on_highlight_pressed():
@@ -151,23 +148,25 @@ def on_highlight_pressed():
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
-    global current_proc
+    global current_arecord_proc, current_lame_proc
     log("[UPLOAD] Button pressed.")
 
-    # Stop current recording
-    if current_proc:
-        log("[UPLOAD] Terminating current recording...")
-        current_proc.terminate()
-        current_proc.wait()
-        current_proc = None
+    if current_arecord_proc:
+        log("[UPLOAD] Terminating arecord...")
+        current_arecord_proc.terminate()
+        current_arecord_proc.wait()
+        current_arecord_proc = None
 
-    # Upload the finished file
+    if current_lame_proc:
+        log("[UPLOAD] Terminating lame...")
+        current_lame_proc.terminate()
+        current_lame_proc.wait()
+        current_lame_proc = None
+
+    time.sleep(1)
     upload_files()
-
-    # Start a new recording
     log("[UPLOAD] Starting new recording after upload.")
     start_new_recording()
-
 
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed = on_upload_pressed
@@ -178,18 +177,17 @@ def upload_files():
     files = {}
 
     log("[UPLOAD] Looking for files in: " + AUDIO_DIR)
+    time.sleep(0.5)
 
-    # Collect CSVs
     csv_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv"))
     for csv_path in csv_paths:
         log(f"[UPLOAD] Found CSV: {csv_path}")
         files[os.path.basename(csv_path)] = open(csv_path, 'rb')
 
-    # Collect mp3s that are not marked uploaded
     mp3_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
     for path in mp3_paths:
         if '_uploaded' not in path:
-            log(f"[UPLOAD] Found mp3: {path}")
+            log(f"[UPLOAD] Found MP3: {path}")
             files[os.path.basename(path)] = open(path, 'rb')
 
     if not files:
@@ -204,7 +202,7 @@ def upload_files():
             highlight_led_stop.set()
             highlight_led_stop = None
 
-        set_led(r=0, g=0, b=1)  # solid blue for upload
+        set_led(r=0, g=0, b=1)
         response = requests.post(UPLOAD_URL, files=files, data=data)
         log(f"[UPLOAD] Response: {response.status_code} - {response.text}")
 
@@ -227,7 +225,6 @@ def upload_files():
         log(f"[UPLOAD] Failed: {e}", level='error')
         set_error_led()
 
-
 # === CLEANUP ===
 def cleanup_old_recordings():
     uploaded_files = sorted(glob.glob(os.path.join(AUDIO_DIR, f'*_uploaded.mp3')))
@@ -241,6 +238,7 @@ def auto_uploader():
     while True:
         time.sleep(CHUNK_DURATION)
         upload_files()
+
 def startup_cleanup_upload():
     log("[STARTUP] Checking for leftover recordings to upload...")
 
@@ -248,7 +246,6 @@ def startup_cleanup_upload():
     leftover_csvs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv"))
 
     files = {}
-
     for path in leftover_csvs:
         if not path.endswith("_uploaded.csv"):
             log(f"[STARTUP] Found leftover CSV: {path}")
@@ -256,7 +253,7 @@ def startup_cleanup_upload():
 
     for path in leftover_mp3s:
         if not path.endswith("_uploaded.mp3"):
-            log(f"[STARTUP] Found leftover mp3: {path}")
+            log(f"[STARTUP] Found leftover MP3: {path}")
             files[os.path.basename(path)] = open(path, 'rb')
 
     if not files:
@@ -264,14 +261,13 @@ def startup_cleanup_upload():
         return
 
     try:
-        set_led(0, 0, 1)  # Solid blue
+        set_led(0, 0, 1)
         data = {'api_key': API_KEY}
         log("[STARTUP] Uploading leftover files...")
         response = requests.post(UPLOAD_URL, files=files, data=data)
         log(f"[STARTUP] Upload response: {response.status_code} - {response.text}")
 
         if response.status_code == 200:
-            # Delete successfully uploaded files
             for f in list(files.keys()):
                 full_path = os.path.join(AUDIO_DIR, f)
                 log(f"[STARTUP] Deleting uploaded file: {full_path}")
@@ -292,7 +288,7 @@ def startup_cleanup_upload():
 
 # === MAIN LOOP ===
 def main():
-    global current_proc
+    global current_arecord_proc, current_lame_proc
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
     startup_sequence()
     startup_cleanup_upload()
@@ -300,9 +296,14 @@ def main():
 
     while True:
         try:
-            if current_proc:
-                current_proc.terminate()
-                current_proc.wait()
+            if current_arecord_proc:
+                current_arecord_proc.terminate()
+                current_arecord_proc.wait()
+                current_arecord_proc = None
+            if current_lame_proc:
+                current_lame_proc.terminate()
+                current_lame_proc.wait()
+                current_lame_proc = None
             start_new_recording()
             time.sleep(CHUNK_DURATION)
         except Exception as e:
