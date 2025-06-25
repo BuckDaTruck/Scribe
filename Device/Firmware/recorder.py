@@ -366,10 +366,8 @@ def main():
                 # Save just-finished file path
                 just_finished_path = os.path.join(AUDIO_DIR, f"part_{session_part - 1:04}.opus")
 
-                # Start new recording
-                start_new_recording()
-
-                # Kill old processes
+                skip_path = just_finished_path
+                # Kill old processes FIRST
                 if current_arecord_proc:
                     current_arecord_proc.terminate()
                     current_arecord_proc.wait()
@@ -379,8 +377,8 @@ def main():
                     current_lame_proc.wait()
                     current_lame_proc = None
 
-                # Determine file being written now, so we skip it during upload
-                skip_path = os.path.join(AUDIO_DIR, f"part_{session_part:04}.opus")
+                # Then start new recording
+                start_new_recording()
                 threading.Thread(target=lambda: upload_files(skip_file=skip_path), daemon=True).start()
 
         except Exception as e:
