@@ -151,7 +151,7 @@ def start_new_recording():
     current_arecord_proc.stdout.close()
     set_led(r=0, g=1, b=0)
     return filepath
-
+#opus works Finally
 # === HIGHLIGHT BUTTON ===
 def on_highlight_pressed():
     global highlight_led_stop, current_csv_path
