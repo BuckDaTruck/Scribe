@@ -174,56 +174,57 @@ BUTTON_UPLOAD.when_pressed = on_upload_pressed
 # === FILE UPLOAD ===
 def upload_files():
     global highlight_led_stop
-    files = {}
+    files_to_upload = []
 
-    log("[UPLOAD] Looking for files in: " + AUDIO_DIR)
-    time.sleep(0.5)
+    log("[UPLOAD] Looking for .mp3 and .csv files in: " + AUDIO_DIR)
+    time.sleep(0.5)  # Give time for filesystem flush
 
-    csv_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv"))
-    for csv_path in csv_paths:
-        log(f"[UPLOAD] Found CSV: {csv_path}")
-        files[os.path.basename(csv_path)] = open(csv_path, 'rb')
+    # Find all mp3 and csv files
+    for ext in ('*.mp3', '*.csv'):
+        files_to_upload.extend(glob.glob(os.path.join(AUDIO_DIR, ext)))
 
-    mp3_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
-    for path in mp3_paths:
-        if '_uploaded' not in path:
-            log(f"[UPLOAD] Found MP3: {path}")
-            files[os.path.basename(path)] = open(path, 'rb')
-
-    if not files:
+    if not files_to_upload:
         log("[UPLOAD] Nothing to upload.")
         return
 
-    data = {'api_key': API_KEY}
+    multipart = {'api_key': API_KEY}
+    file_handles = {}
+
     try:
-        log("[UPLOAD] Sending files...")
+        for path in files_to_upload:
+            basename = os.path.basename(path)
+            file_handles[basename] = open(path, 'rb')
 
         if highlight_led_stop:
             highlight_led_stop.set()
             highlight_led_stop = None
 
-        set_led(r=0, g=0, b=1)
-        response = requests.post(UPLOAD_URL, files=files, data=data)
+        set_led(r=0, g=0, b=1)  # Blue = uploading
+        log(f"[UPLOAD] Uploading {len(file_handles)} files...")
+        response = requests.post(UPLOAD_URL, files=file_handles, data=multipart)
         log(f"[UPLOAD] Response: {response.status_code} - {response.text}")
 
         if response.status_code == 200:
-            for f in files:
-                if f.endswith('.mp3'):
-                    old = os.path.join(AUDIO_DIR, f)
-                    new = old.replace('.mp3', '_uploaded.mp3')
-                    os.rename(old, new)
-            cleanup_old_recordings()
+            for path in files_to_upload:
+                try:
+                    os.remove(path)
+                    log(f"[UPLOAD] Deleted uploaded file: {path}")
+                except Exception as e:
+                    log(f"[UPLOAD] Could not delete file {path}: {e}", level='error')
             quick_flash(b=1)
-            log(f"[UPLOAD] Uploaded files: {list(files.keys())}")
         else:
             quick_flash(r=1)
-            log("[UPLOAD] Server error", level='error')
+            log("[UPLOAD] Server error during file upload.", level='error')
 
         set_led(0, 0, 0)
+
     except Exception as e:
         quick_flash(r=1)
-        log(f"[UPLOAD] Failed: {e}", level='error')
+        log(f"[UPLOAD] Exception: {e}", level='error')
         set_error_led()
+    finally:
+        for fh in file_handles.values():
+            fh.close()
 
 # === CLEANUP ===
 def cleanup_old_recordings():
