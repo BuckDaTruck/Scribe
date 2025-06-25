@@ -119,25 +119,13 @@ def start_new_recording():
     ], stdout=subprocess.PIPE)
 
     current_lame_proc = subprocess.Popen([
-        'lame', '-r', '-s', '88.2', '--resample', '44.1', '--preset', 'standard', '-', filepath
+        'lame', '-r', '--resample', '16', '--preset', 'standard', '--scale', '10', '-', filepath
     ], stdin=current_arecord_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     current_arecord_proc.stdout.close()
     set_led(r=0, g=1, b=0)
     return filepath
 
-# === AUDIO NORMALIZATION ===
-def normalize_audio(filepath):
-    try:
-        normalized = filepath.replace('.mp3', '_norm.mp3')
-        log(f"[NORMALIZE] Normalizing {filepath}")
-        subprocess.run(['sox', filepath, normalized, 'gain', '-n'], check=True)
-        os.replace(normalized, filepath)
-        log(f"[NORMALIZE] Replaced with normalized audio: {filepath}")
-    except Exception as e:
-        log(f"[NORMALIZE] Error normalizing audio {filepath}: {e}", level='error')
-        
-        
 # === HIGHLIGHT BUTTON ===
 def on_highlight_pressed():
     global highlight_led_stop, current_csv_path
@@ -267,10 +255,8 @@ def main():
                 current_lame_proc.terminate()
                 current_lame_proc.wait()
                 current_lame_proc = None
-            filepath = start_new_recording()
+            start_new_recording()
             time.sleep(CHUNK_DURATION)
-            normalize_audio(filepath)
-
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
             set_error_led()
