@@ -234,8 +234,11 @@ def upload_files(skip_file=None):
 
     try:
         for path in files_to_upload:
-            if skip_file and os.path.samefile(path, skip_file):
-                continue
+            if skip_file and os.path.abspath(path) == os.path.abspath(skip_file):
+                if not os.path.exists(skip_file):
+                    log(f"[UPLOAD] Skipping file that does not exist yet: {skip_file}")
+                else:
+                    continue
             basename = os.path.basename(path)
             file_handles[basename] = open(path, 'rb')
 
