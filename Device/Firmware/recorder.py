@@ -321,7 +321,7 @@ def main():
 
             start_time = time.time()
             while time.time() - start_time < CHUNK_DURATION:
-                time.sleep(1)
+                
                 if idle_mode:
                     break
                 # ADD THIS HERE
