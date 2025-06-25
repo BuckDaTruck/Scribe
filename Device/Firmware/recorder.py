@@ -139,7 +139,7 @@ def start_new_recording():
     ], stdout=subprocess.PIPE)
 
     current_lame_proc = subprocess.Popen([
-    'opusenc', '--raw', '--raw-rate', '88200', '--raw-chan', '10', '-', filepath
+    'opusenc', '--raw', '--raw-rate', '88200', '--raw-chan', '1','--gain', '10', '-', filepath
     ], stdin=current_arecord_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     current_arecord_proc.stdout.close()
