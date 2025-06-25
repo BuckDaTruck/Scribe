@@ -321,7 +321,7 @@ def main():
 
             start_time = time.time()
             while time.time() - start_time < CHUNK_DURATION:
-                
+                time.sleep(1)
                 if idle_mode:
                     break
                 # ADD THIS HERE
@@ -330,18 +330,20 @@ def main():
                     set_led(r=0, g=1, b=0)
             
             if not idle_mode:
+                # Start new recording FIRST
+                new_filepath = start_new_recording()
+
+                # Then terminate the old ones (they'll be flushed while new one is already rolling)
                 if current_arecord_proc:
                     current_arecord_proc.terminate()
-                    current_arecord_proc.wait()
+                    threading.Thread(target=current_arecord_proc.wait, daemon=True).start()
                 if current_lame_proc:
                     current_lame_proc.terminate()
-                    current_lame_proc.wait()
-                    # Capture current session_id and file info before it changes
-                   
+                    threading.Thread(target=current_lame_proc.wait, daemon=True).start()
 
-                    # Start the next recording immediately
-                    new_filepath = start_new_recording()
-                    threading.Thread(target=lambda: upload_files(skip_file=new_filepath), daemon=True).start()
+                # Upload in background, skipping the current file
+                threading.Thread(target=lambda: upload_files(skip_file=new_filepath), daemon=True).start()
+
 
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
