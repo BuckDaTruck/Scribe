@@ -18,8 +18,8 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 
 UPLOAD_URL = 'https://buckleywiley.com/Scribe/upload.php'
 API_KEY = '@YourPassword123'
-BUTTON_HIGHLIGHT = Button(17)
-BUTTON_UPLOAD = Button(27)
+BUTTON_HIGHLIGHT = Button(17, bounce_time=0.1)
+BUTTON_UPLOAD = Button(27, bounce_time=0.1)
 CHUNK_DURATION = 30 * 60  # 30 minutes
 MAX_UPLOADED = 5
 
