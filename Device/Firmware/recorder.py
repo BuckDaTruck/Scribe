@@ -127,7 +127,7 @@ def start_new_recording():
     global current_arecord_proc, current_lame_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     print(f"Session ID {session_id}")
-    filename = f"part {session_part:04}.opus"
+    filename = f"part_{session_part:04}.opus"
     filepath = os.path.join(AUDIO_DIR, filename)
     current_csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
     session_part += 1
@@ -346,7 +346,7 @@ def main():
 
             if not idle_mode:
                 # Save just-finished file path
-                just_finished_path = os.path.join(AUDIO_DIR, f"part {session_part - 1:04}.opus")
+                just_finished_path = os.path.join(AUDIO_DIR, f"part_{session_part - 1:04}.opus")
 
                 # Start new recording
                 start_new_recording()
@@ -360,7 +360,7 @@ def main():
                     threading.Thread(target=current_lame_proc.wait, daemon=True).start()
 
                 # Determine file being written now, so we skip it during upload
-                skip_path = os.path.join(AUDIO_DIR, f"part {session_part:04}.opus")
+                skip_path = os.path.join(AUDIO_DIR, f"part_{session_part:04}.opus")
                 threading.Thread(target=lambda: upload_files(skip_file=skip_path), daemon=True).start()
 
         except Exception as e:
