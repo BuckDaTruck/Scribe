@@ -216,9 +216,8 @@ def upload_files():
     files_to_upload = []
 
     log("[UPLOAD] Looking for .opus and .csv files in: " + AUDIO_DIR)
-    time.sleep(1.0)  # Give time for filesystem flush
+    time.sleep(1.0)
 
-    # Find all opus and csv files
     for ext in ('*.opus', '*.csv'):
         files_to_upload.extend(glob.glob(os.path.join(AUDIO_DIR, ext)))
 
@@ -226,7 +225,11 @@ def upload_files():
         log("[UPLOAD] Nothing to upload.")
         return
 
-    multipart = {'api_key': API_KEY}
+    multipart = {
+        'api_key': API_KEY,
+        'device_id': DEVICE_ID,
+        'session_id': SESSION_ID
+    }
     file_handles = {}
 
     try:
@@ -238,7 +241,6 @@ def upload_files():
             highlight_led_stop.set()
             highlight_led_stop = None
 
-        # Start pulsing blue
         log(f"[UPLOAD] Uploading {len(file_handles)} files...")
         upload_led_pulse = pulse_led(r=0, g=0, b=1, duration=999)
 
@@ -268,7 +270,6 @@ def upload_files():
     finally:
         for fh in file_handles.values():
             fh.close()
-
 
 # === AUTO-UPLOAD THREAD ===
 def auto_uploader():
