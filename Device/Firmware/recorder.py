@@ -294,7 +294,7 @@ def main():
     print(f"[SYSTEM]Device ID: {DEVICE_ID}")
     print(f"[SYSTEM]Audio Directory: {AUDIO_DIR}")
     print("[SYSTEM]Log file: " + LOG_PATH)
-    print(f"Welcome to the Scribe Audio Recorder!")
+    print("Welcome to the Scribe Audio Recorder!")
     print("Audio recording will start automatically.")
     print("Audio is sent to BuckleyWiley.com for processing.")
     print("Press the highlight button to mark highlights.")
@@ -306,13 +306,12 @@ def main():
     print("Pulsing Green/Blue: Idle mode")
     print("Red: Error")
     print("White flash: Startup complete")
-    
 
     startup_sequence()
     startup_cleanup_upload()
     threading.Thread(target=auto_uploader, daemon=True).start()
 
-    filepath = start_new_recording()
+    start_new_recording()
     while True:
         try:
             if idle_mode:
@@ -324,16 +323,20 @@ def main():
                 time.sleep(1)
                 if idle_mode:
                     break
-                # ADD THIS HERE
-                if current_arecord_proc and current_arecord_proc.poll() is None and \
-                    current_lame_proc and current_lame_proc.poll() is None and not idle_mode:
-                    set_led(r=0, g=1, b=0)
-            
-            if not idle_mode:
-                # Start new recording FIRST
-                new_filepath = start_new_recording()
 
-                # Then terminate the old ones (they'll be flushed while new one is already rolling)
+                # Ensure LED is green if actively recording
+                if current_arecord_proc and current_arecord_proc.poll() is None and \
+                   current_lame_proc and current_lame_proc.poll() is None and not idle_mode:
+                    set_led(r=0, g=1, b=0)
+
+            if not idle_mode:
+                # Capture old file before starting new one
+                old_filepath = os.path.join(AUDIO_DIR, f"part {session_part - 1:04}.opus")
+
+                # Start new recording immediately
+                start_new_recording()
+
+                # Terminate old recording processes in background
                 if current_arecord_proc:
                     current_arecord_proc.terminate()
                     threading.Thread(target=current_arecord_proc.wait, daemon=True).start()
@@ -341,9 +344,9 @@ def main():
                     current_lame_proc.terminate()
                     threading.Thread(target=current_lame_proc.wait, daemon=True).start()
 
-                # Upload in background, skipping the current file
-                threading.Thread(target=lambda: upload_files(skip_file=new_filepath), daemon=True).start()
-
+                # Upload the old file, skipping the one being written
+                if os.path.exists(old_filepath):
+                    threading.Thread(target=lambda: upload_files(skip_file=old_filepath), daemon=True).start()
 
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
