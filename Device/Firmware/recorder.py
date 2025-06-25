@@ -121,14 +121,13 @@ highlighting = []
 highlight_led_stop = None
 session_id = uuid.uuid4().hex[:8]
 session_part = 1
-current_csv_path = None
 
 # === AUDIO RECORDING ===
 def start_new_recording():
     global current_arecord_proc, current_lame_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     print(f"Session ID {session_id}")
-    filename = f"part {session_part}.opus"
+    filename = f"part {session_part:04}.opus"
     filepath = os.path.join(AUDIO_DIR, filename)
     current_csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
     session_part += 1
@@ -257,7 +256,6 @@ def upload_files(skip_file=None):
                 try:
                     # Skip deletion if this file is the current recording
                     if skip_file and os.path.samefile(path, skip_file):
-                        log(f"[UPLOAD] Skipped deleting current recording file: {path}")
                         continue
                     os.remove(path)
                     log(f"[UPLOAD] Deleted uploaded file: {path}")
@@ -286,6 +284,7 @@ def startup_cleanup_upload():
     log("[STARTUP] Checking for leftover recordings to upload...")
 
     upload_files()
+    
 
 # === MAIN LOOP ===
 def main():
@@ -325,7 +324,11 @@ def main():
                 time.sleep(1)
                 if idle_mode:
                     break
-
+                # ADD THIS HERE
+                if current_arecord_proc and current_arecord_proc.poll() is None and \
+                    current_lame_proc and current_lame_proc.poll() is None and not idle_mode:
+                    set_led(r=0, g=1, b=0)
+            
             if not idle_mode:
                 if current_arecord_proc:
                     current_arecord_proc.terminate()
