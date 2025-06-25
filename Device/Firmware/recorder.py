@@ -128,7 +128,7 @@ def start_new_recording():
     global current_arecord_proc, current_lame_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     print(f"Session ID {session_id}")
-    filename = f"part{session_part}.opus"
+    filename = f"part {session_part}.opus"
     filepath = os.path.join(AUDIO_DIR, filename)
     current_csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
     session_part += 1
@@ -329,8 +329,15 @@ def main():
                 if current_lame_proc:
                     current_lame_proc.terminate()
                     current_lame_proc.wait()
-                upload_files()
-                start_new_recording()
+                    # Capture current session_id and file info before it changes
+                    prev_session_id = session_id
+                    prev_csv_path = current_csv_path
+
+                    # Start the next recording immediately
+                    start_new_recording()
+
+                    # Upload the previous chunk in a background thread
+                    threading.Thread(target=upload_files, daemon=True).start()
 
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
