@@ -1,5 +1,5 @@
 <?php
-$allowedExtensions = ['wav', 'mp3', 'csv'];
+$allowedExtensions = ['wav', 'mp3', 'csv','opus'];
 $uploadDir = 'uploads/';
 $logFile = 'upload_log.csv';
 $apiKey = '@YourPassword123'; // Set securely
