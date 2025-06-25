@@ -119,7 +119,7 @@ def start_new_recording():
     ], stdout=subprocess.PIPE)
 
     current_lame_proc = subprocess.Popen([
-        'lame', '-r', '--resample', '16', '--preset', 'standard', '--scale', '6', '-', filepath
+        'lame', '-r', '--resample', '16', '--preset', 'standard', '--scale', '1', '-', filepath
     ], stdin=current_arecord_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     current_arecord_proc.stdout.close()
