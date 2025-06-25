@@ -64,6 +64,24 @@ def pulse_led(r=0, g=0, b=0, duration=10, delay=0.05):
     thread.start()
     return stop_event
 
+# === TRIPLE TAP DETECTION ===
+last_tap_time = 0
+tap_count = 0
+idle_mode = False
+pulse_thread = None
+pulse_event = threading.Event()
+
+def idle_led_pulse():
+    while not pulse_event.is_set():
+        for i in range(100):
+            if pulse_event.is_set(): return
+            val = (math.sin(time.time() * 2) + 1) / 2
+            led_g.value = val
+            led_b.value = 1 - val
+            time.sleep(0.05)
+        set_led(0, 0, 0)
+
+
 def quick_flash(r=0, g=0, b=0, duration=0.2):
     set_led(r, g, b)
     time.sleep(duration)
@@ -143,30 +161,44 @@ def on_highlight_pressed():
 
     if highlight_led_stop:
         highlight_led_stop.set()
+        set_led(r=0, g=1, b=0)
 
     highlight_led_stop = pulse_led(r=0, g=1, b=0, duration=5 * 60)
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
-    global current_arecord_proc, current_lame_proc
-    log("[UPLOAD] Button pressed.")
+    global tap_count, last_tap_time, idle_mode, pulse_event
 
-    if current_arecord_proc:
-        log("[UPLOAD] Terminating arecord...")
-        current_arecord_proc.terminate()
-        current_arecord_proc.wait()
-        current_arecord_proc = None
+    now = time.time()
+    if now - last_tap_time > 1.0:
+        tap_count = 1
+    else:
+        tap_count += 1
+    last_tap_time = now
 
-    if current_lame_proc:
-        log("[UPLOAD] Terminating lame...")
-        current_lame_proc.terminate()
-        current_lame_proc.wait()
-        current_lame_proc = None
-
-    time.sleep(1)
-    upload_files()
-    log("[UPLOAD] Starting new recording after upload.")
-    start_new_recording()
+    if tap_count == 3:
+        log("[UPLOAD] Triple tap detected. Stopping recording and entering idle mode.")
+        if current_arecord_proc:
+            current_arecord_proc.terminate()
+            current_arecord_proc.wait()
+        if current_lame_proc:
+            current_lame_proc.terminate()
+            current_lame_proc.wait()
+        upload_files()
+        idle_mode = True
+        pulse_event.clear()
+        threading.Thread(target=idle_led_pulse, daemon=True).start()
+    elif tap_count == 1:
+        log("[UPLOAD] Single tap: normal upload and resume.")
+        if current_arecord_proc:
+            current_arecord_proc.terminate()
+            current_arecord_proc.wait()
+        if current_lame_proc:
+            current_lame_proc.terminate()
+            current_lame_proc.wait()
+        upload_files()
+        if not idle_mode:
+            start_new_recording()
 
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed = on_upload_pressed
@@ -239,24 +271,35 @@ def startup_cleanup_upload():
 
 # === MAIN LOOP ===
 def main():
-    global current_arecord_proc, current_lame_proc
+    global idle_mode
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
     startup_sequence()
     startup_cleanup_upload()
     threading.Thread(target=auto_uploader, daemon=True).start()
 
+    filepath = start_new_recording()
     while True:
         try:
-            if current_arecord_proc:
-                current_arecord_proc.terminate()
-                current_arecord_proc.wait()
-                current_arecord_proc = None
-            if current_lame_proc:
-                current_lame_proc.terminate()
-                current_lame_proc.wait()
-                current_lame_proc = None
-            start_new_recording()
-            time.sleep(CHUNK_DURATION)
+            if idle_mode:
+                time.sleep(1)
+                continue
+
+            start_time = time.time()
+            while time.time() - start_time < CHUNK_DURATION:
+                time.sleep(1)
+                if idle_mode:
+                    break
+
+            if not idle_mode:
+                if current_arecord_proc:
+                    current_arecord_proc.terminate()
+                    current_arecord_proc.wait()
+                if current_lame_proc:
+                    current_lame_proc.terminate()
+                    current_lame_proc.wait()
+                upload_files()
+                start_new_recording()
+
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
             set_error_led()
