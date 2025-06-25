@@ -343,11 +343,10 @@ def main():
                 current_lame_proc and current_lame_proc.poll() is None:
                     set_led(r=0, g=1, b=0)
 
-            # ✅ Add this check again right before starting new recording
+            # ✅ CRITICAL: double check idle mode *again* before starting new recording
             if idle_mode:
                 continue
 
-            # Start new recording
             just_finished_path = os.path.join(AUDIO_DIR, f"part_{session_part - 1:04}.opus")
             start_new_recording()
 
