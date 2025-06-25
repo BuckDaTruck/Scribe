@@ -231,23 +231,27 @@ def upload_files(skip_file=None):
         'session_id': session_id
     }
     file_handles = {}
+    skip_abs = os.path.abspath(skip_file) if skip_file else None
 
     try:
+        # Open all valid files except the one currently being written
         for path in files_to_upload:
             abs_path = os.path.abspath(path)
-            skip_abs = os.path.abspath(skip_file) if skip_file else None
-
-            # Skip current recording file (not yet complete)
             if skip_file and abs_path == skip_abs:
                 log(f"[UPLOAD] Skipping file still being recorded: {path}")
                 continue
-
             try:
                 basename = os.path.basename(path)
                 file_handles[basename] = open(path, 'rb')
+                log(f"[UPLOAD] Preparing to upload: {basename}")
             except Exception as e:
                 log(f"[UPLOAD] Failed to open file {path}: {e}", level='error')
 
+        if not file_handles:
+            log("[UPLOAD] No files opened for upload after skipping.")
+            return
+
+        # Stop any LED pulse for highlight
         if highlight_led_stop:
             highlight_led_stop.set()
             highlight_led_stop = None
@@ -335,15 +339,19 @@ def main():
                 if idle_mode:
                     break
 
-                
-            if not idle_mode:
-                # Determine the file that is about to be written
-                current_file_path = os.path.join(AUDIO_DIR, f"part {session_part:04}.opus")
+                # Keep LED green while recording
+                if current_arecord_proc and current_arecord_proc.poll() is None and \
+                   current_lame_proc and current_lame_proc.poll() is None and not idle_mode:
+                    set_led(r=0, g=1, b=0)
 
-                # Start new recording BEFORE killing old ones
+            if not idle_mode:
+                # Save just-finished file path
+                just_finished_path = os.path.join(AUDIO_DIR, f"part {session_part - 1:04}.opus")
+
+                # Start new recording
                 start_new_recording()
 
-                # Kill old processes in background
+                # Kill old processes
                 if current_arecord_proc:
                     current_arecord_proc.terminate()
                     threading.Thread(target=current_arecord_proc.wait, daemon=True).start()
@@ -351,14 +359,15 @@ def main():
                     current_lame_proc.terminate()
                     threading.Thread(target=current_lame_proc.wait, daemon=True).start()
 
-                # Upload all files except the one that's currently being recorded
-                threading.Thread(target=lambda: upload_files(skip_file=current_file_path), daemon=True).start()
-
+                # Determine file being written now, so we skip it during upload
+                skip_path = os.path.join(AUDIO_DIR, f"part {session_part:04}.opus")
+                threading.Thread(target=lambda: upload_files(skip_file=skip_path), daemon=True).start()
 
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
             set_error_led()
             time.sleep(10)
+
 
 if __name__ == "__main__":
     main()
