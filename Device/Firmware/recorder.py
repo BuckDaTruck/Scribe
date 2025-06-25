@@ -185,11 +185,11 @@ def upload_files():
         log(f"[UPLOAD] Found CSV: {csv_path}")
         files[os.path.basename(csv_path)] = open(csv_path, 'rb')
 
-    # Collect WAVs that are not marked uploaded
-    wav_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
-    for path in wav_paths:
+    # Collect mp3s that are not marked uploaded
+    mp3_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
+    for path in mp3_paths:
         if '_uploaded' not in path:
-            log(f"[UPLOAD] Found WAV: {path}")
+            log(f"[UPLOAD] Found mp3: {path}")
             files[os.path.basename(path)] = open(path, 'rb')
 
     if not files:
@@ -244,7 +244,7 @@ def auto_uploader():
 def startup_cleanup_upload():
     log("[STARTUP] Checking for leftover recordings to upload...")
 
-    leftover_wavs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
+    leftover_mp3s = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
     leftover_csvs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv"))
 
     files = {}
@@ -254,7 +254,7 @@ def startup_cleanup_upload():
             log(f"[STARTUP] Found leftover CSV: {path}")
             files[os.path.basename(path)] = open(path, 'rb')
 
-    for path in leftover_wavs:
+    for path in leftover_mp3s:
         if not path.endswith("_uploaded.mp3"):
             log(f"[STARTUP] Found leftover mp3: {path}")
             files[os.path.basename(path)] = open(path, 'rb')
