@@ -106,18 +106,28 @@ current_csv_path = None
 def start_new_recording():
     global current_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    filename = f"Scribe_v1.1_{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.wav"
+    filename = f"Scribe_v1.1_{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.mp3"
     filepath = os.path.join(AUDIO_DIR, filename)
-    current_csv_path = filepath.replace('.wav', '.csv')
+    current_csv_path = filepath.replace('.mp3', '.csv')
     session_part += 1
 
-    log(f"[INFO] Starting recording: {filename}")
+    log(f"[INFO] Starting MP3 recording: {filename}")
     current_proc = subprocess.Popen([
-        'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE',
-        '-r', '16000', '-c', '1', filepath
-    ])
+        'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', '16000', '-c', '1',
+        '-t', 'raw', '-q', '-',
+    ], stdout=subprocess.PIPE)
+
+    # Pipe raw audio to LAME to encode to MP3
+    mp3_proc = subprocess.Popen([
+        'lame', '-r', '-s', '16', '-', filepath
+    ], stdin=current_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    current_proc.stdout.close()  # allow arecord to receive a SIGPIPE if lame exits
+    current_proc = mp3_proc
+
     set_led(r=0, g=1, b=0)  # solid green
     return filepath
+
 
 # === HIGHLIGHT BUTTON ===
 def on_highlight_pressed():
@@ -176,7 +186,7 @@ def upload_files():
         files[os.path.basename(csv_path)] = open(csv_path, 'rb')
 
     # Collect WAVs that are not marked uploaded
-    wav_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.wav"))
+    wav_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
     for path in wav_paths:
         if '_uploaded' not in path:
             log(f"[UPLOAD] Found WAV: {path}")
@@ -200,9 +210,9 @@ def upload_files():
 
         if response.status_code == 200:
             for f in files:
-                if f.endswith('.wav'):
+                if f.endswith('.mp3'):
                     old = os.path.join(AUDIO_DIR, f)
-                    new = old.replace('.wav', '_uploaded.wav')
+                    new = old.replace('.mp3', '_uploaded.mp3')
                     os.rename(old, new)
             cleanup_old_recordings()
             quick_flash(b=1)
@@ -220,7 +230,7 @@ def upload_files():
 
 # === CLEANUP ===
 def cleanup_old_recordings():
-    uploaded_files = sorted(glob.glob(os.path.join(AUDIO_DIR, f'*_uploaded.wav')))
+    uploaded_files = sorted(glob.glob(os.path.join(AUDIO_DIR, f'*_uploaded.mp3')))
     if len(uploaded_files) > MAX_UPLOADED:
         for f in uploaded_files[:-MAX_UPLOADED]:
             log(f"[CLEANUP] Deleting old file: {f}")
@@ -234,7 +244,7 @@ def auto_uploader():
 def startup_cleanup_upload():
     log("[STARTUP] Checking for leftover recordings to upload...")
 
-    leftover_wavs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.wav"))
+    leftover_wavs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
     leftover_csvs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv"))
 
     files = {}
@@ -245,8 +255,8 @@ def startup_cleanup_upload():
             files[os.path.basename(path)] = open(path, 'rb')
 
     for path in leftover_wavs:
-        if not path.endswith("_uploaded.wav"):
-            log(f"[STARTUP] Found leftover WAV: {path}")
+        if not path.endswith("_uploaded.mp3"):
+            log(f"[STARTUP] Found leftover mp3: {path}")
             files[os.path.basename(path)] = open(path, 'rb')
 
     if not files:
