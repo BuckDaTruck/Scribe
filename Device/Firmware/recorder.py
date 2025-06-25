@@ -139,12 +139,12 @@ def start_new_recording():
     ], stdout=subprocess.PIPE)
 
     sox_proc = subprocess.Popen([
-    'sox', '-t', 'raw', '-r', '88200', '-e', 'signed', '-b', '16', '-c', '1', '-',  # raw PCM input
+    'sox', '-t', 'raw', '-r', '16000', '-e', 'signed', '-b', '16', '-c', '1', '-',  # raw PCM input
     '-t', 'raw', '-', 'gain', '10'  # actual amplification
     ], stdin=current_arecord_proc.stdout, stdout=subprocess.PIPE)
 
     current_lame_proc = subprocess.Popen([
-    'opusenc', '--raw', '--raw-rate', '16000', '--raw-chan', '1', '-', filepath
+    'opusenc', '--raw', '--raw-rate', '882000', '--raw-chan', '1', '-', filepath
     ], stdin=sox_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     sox_proc.stdout.close()
