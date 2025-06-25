@@ -127,19 +127,19 @@ current_csv_path = None
 def start_new_recording():
     global current_arecord_proc, current_lame_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    filename = f"{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.mp3"
+    filename = f"{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.opus"
     filepath = os.path.join(AUDIO_DIR, filename)
-    current_csv_path = filepath.replace('.mp3', '.csv')
+    current_csv_path = filepath.replace('.opus', '.csv')
     session_part += 1
 
-    log(f"[INFO] Starting MP3 recording: {filename}")
+    log(f"[INFO] Starting opus recording: {filename}")
     current_arecord_proc = subprocess.Popen([
         'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', '88200', '-c', '1',
         '-t', 'raw', '-q', '-',
     ], stdout=subprocess.PIPE)
 
     current_lame_proc = subprocess.Popen([
-        'lame', '-r', '--resample', '16', '--preset', 'standard', '--scale', '10', '-', filepath
+    'opusenc', '--raw', '--raw-rate', '88200', '--raw-chan', '10', '-', filepath
     ], stdin=current_arecord_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     current_arecord_proc.stdout.close()
@@ -209,11 +209,11 @@ def upload_files():
     global highlight_led_stop
     files_to_upload = []
 
-    log("[UPLOAD] Looking for .mp3 and .csv files in: " + AUDIO_DIR)
+    log("[UPLOAD] Looking for .opus and .csv files in: " + AUDIO_DIR)
     time.sleep(1.0)  # Give time for filesystem flush
 
-    # Find all mp3 and csv files
-    for ext in ('*.mp3', '*.csv'):
+    # Find all opus and csv files
+    for ext in ('*.opus', '*.csv'):
         files_to_upload.extend(glob.glob(os.path.join(AUDIO_DIR, ext)))
 
     if not files_to_upload:
