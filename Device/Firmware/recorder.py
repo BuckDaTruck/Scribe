@@ -130,7 +130,7 @@ def start_new_recording():
     print(f"Session ID {session_id}")
     filename = f"part{session_part}.opus"
     filepath = os.path.join(AUDIO_DIR, filename)
-    current_csv_path = "{session_id}_Highlights.csv".format(session_id=session_id)
+    current_csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
     session_part += 1
 
     log(f"[INFO] Starting opus recording: {filename}")
