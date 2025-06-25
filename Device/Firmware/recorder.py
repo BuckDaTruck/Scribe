@@ -234,13 +234,19 @@ def upload_files(skip_file=None):
 
     try:
         for path in files_to_upload:
-            if skip_file and os.path.abspath(path) == os.path.abspath(skip_file):
-                if not os.path.exists(skip_file):
-                    log(f"[UPLOAD] Skipping file that does not exist yet: {skip_file}")
-                else:
-                    continue
-            basename = os.path.basename(path)
-            file_handles[basename] = open(path, 'rb')
+            abs_path = os.path.abspath(path)
+            skip_abs = os.path.abspath(skip_file) if skip_file else None
+
+            # Skip current recording file (not yet complete)
+            if skip_file and abs_path == skip_abs:
+                log(f"[UPLOAD] Skipping file still being recorded: {path}")
+                continue
+
+            try:
+                basename = os.path.basename(path)
+                file_handles[basename] = open(path, 'rb')
+            except Exception as e:
+                log(f"[UPLOAD] Failed to open file {path}: {e}", level='error')
 
         if highlight_led_stop:
             highlight_led_stop.set()
@@ -258,10 +264,10 @@ def upload_files(skip_file=None):
 
         if response.status_code == 200:
             for path in files_to_upload:
+                abs_path = os.path.abspath(path)
+                if skip_file and abs_path == skip_abs:
+                    continue
                 try:
-                    # Skip deletion if this file is the current recording
-                    if skip_file and os.path.samefile(path, skip_file):
-                        continue
                     os.remove(path)
                     log(f"[UPLOAD] Deleted uploaded file: {path}")
                 except Exception as e:
