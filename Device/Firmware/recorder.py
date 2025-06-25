@@ -303,6 +303,7 @@ def startup_cleanup_upload():
 
 # === MAIN LOOP ===
 def main():
+    global current_arecord_proc, current_lame_proc
     global idle_mode
     print("[SYSTEM]Starting Scribe Recorder...")
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
