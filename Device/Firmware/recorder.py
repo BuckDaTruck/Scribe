@@ -114,7 +114,7 @@ def start_new_recording():
 
     log(f"[INFO] Starting MP3 recording: {filename}")
     current_arecord_proc = subprocess.Popen([
-        'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', '44100', '-c', '1',
+        'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', '88200', '-c', '1',
         '-t', 'raw', '-q', '-',
     ], stdout=subprocess.PIPE)
 
