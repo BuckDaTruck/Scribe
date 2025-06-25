@@ -371,10 +371,12 @@ def main():
                 # Kill old processes
                 if current_arecord_proc:
                     current_arecord_proc.terminate()
-                    threading.Thread(target=current_arecord_proc.wait, daemon=True).start()
+                    current_arecord_proc.wait()
+                    current_arecord_proc = None
                 if current_lame_proc:
                     current_lame_proc.terminate()
-                    threading.Thread(target=current_lame_proc.wait, daemon=True).start()
+                    current_lame_proc.wait()
+                    current_lame_proc = None
 
                 # Determine file being written now, so we skip it during upload
                 skip_path = os.path.join(AUDIO_DIR, f"part_{session_part:04}.opus")
