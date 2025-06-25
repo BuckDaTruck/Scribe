@@ -23,7 +23,7 @@ BUTTON_UPLOAD = Button(27, bounce_time=0.1)
 CHUNK_DURATION = 30 * 60  # 30 minutes
 MAX_UPLOADED = 5
 last_upload_time = 0
-UPLOAD_DEBOUNCE_SEC = 2.0
+UPLOAD_DEBOUNCE_SEC = 2.0  # Prevent triggering more than once every 2 seconds
 
 # === LOGGING SETUP ===
 LOG_PATH = os.path.join(SCRIPT_DIR, 'scribe.log')
@@ -70,17 +70,19 @@ def pulse_led(r=0, g=0, b=0, duration=10, delay=0.05):
 last_tap_time = 0
 tap_count = 0
 idle_mode = False
+pulse_thread = None
 pulse_event = threading.Event()
 
 def idle_led_pulse():
     while not pulse_event.is_set():
-        for _ in range(100):
+        for i in range(100):
             if pulse_event.is_set(): return
             val = (math.sin(time.time() * 2) + 1) / 2
             led_g.value = val
             led_b.value = 1 - val
             time.sleep(0.05)
         set_led(0, 0, 0)
+
 
 def quick_flash(r=0, g=0, b=0, duration=0.2):
     set_led(r, g, b)
@@ -92,7 +94,15 @@ def set_error_led():
 
 def startup_sequence():
     log("[SYSTEM] Running startup LED sequence...")
-    colors = [(1, 0, 0), (1, 0.5, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (0.29, 0, 0.51), (0.56, 0, 1)]
+    colors = [
+        (1, 0, 0),   # Red
+        (1, 0.5, 0), # Orange
+        (1, 1, 0),   # Yellow
+        (0, 1, 0),   # Green
+        (0, 0, 1),   # Blue
+        (0.29, 0, 0.51), # Indigo
+        (0.56, 0, 1),    # Violet
+    ]
     for r, g, b in colors:
         set_led(r, g, b)
         time.sleep(0.2)
@@ -112,15 +122,13 @@ highlight_led_stop = None
 session_id = uuid.uuid4().hex[:8]
 session_part = 1
 current_csv_path = None
-current_recording_path = None
 
 # === AUDIO RECORDING ===
 def start_new_recording():
-    global current_arecord_proc, current_lame_proc, session_part, current_csv_path, current_recording_path
+    global current_arecord_proc, current_lame_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     filename = f"{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.opus"
     filepath = os.path.join(AUDIO_DIR, filename)
-    current_recording_path = filepath
     current_csv_path = filepath.replace('.opus', '.csv')
     session_part += 1
 
@@ -131,19 +139,19 @@ def start_new_recording():
     ], stdout=subprocess.PIPE)
 
     sox_proc = subprocess.Popen([
-        'sox', '-t', 'raw', '-r', '16000', '-e', 'signed', '-b', '16', '-c', '1', '-', 
-        '-t', 'raw', '-', 'gain', '10'
+    'sox', '-t', 'raw', '-r', '16000', '-e', 'signed', '-b', '16', '-c', '1', '-',  # raw PCM input
+    '-t', 'raw', '-', 'gain', '10'  # actual amplification
     ], stdin=current_arecord_proc.stdout, stdout=subprocess.PIPE)
 
     current_lame_proc = subprocess.Popen([
-        'opusenc', '--raw', '--raw-rate', '88200', '--raw-chan', '1', '-', filepath
+    'opusenc', '--raw', '--raw-rate', '88200', '--raw-chan', '1', '-', filepath
     ], stdin=sox_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     sox_proc.stdout.close()
     current_arecord_proc.stdout.close()
     set_led(r=0, g=1, b=0)
     return filepath
-
+#opus works Finally
 # === HIGHLIGHT BUTTON ===
 def on_highlight_pressed():
     global highlight_led_stop, current_csv_path
@@ -169,6 +177,8 @@ def on_highlight_pressed():
 def on_upload_pressed():
     global idle_mode, pulse_event, last_upload_time, session_id, session_part
     now = time.time()
+
+    # Manual debounce protection
     if now - last_upload_time < UPLOAD_DEBOUNCE_SEC:
         log("[UPLOAD] Ignored: Debounced repeated press.")
         return
@@ -189,12 +199,13 @@ def on_upload_pressed():
         threading.Thread(target=idle_led_pulse, daemon=True).start()
     else:
         log("[UPLOAD] Upload button pressed. Starting new recording session.")
-        pulse_event.set()
+        pulse_event.set()  # stop pulsing
         set_led(0, 0, 0)
         idle_mode = False
         session_id = uuid.uuid4().hex[:8]
         session_part = 1
         start_new_recording()
+
 
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed = on_upload_pressed
@@ -203,14 +214,13 @@ BUTTON_UPLOAD.when_pressed = on_upload_pressed
 def upload_files():
     global highlight_led_stop
     files_to_upload = []
-    log("[UPLOAD] Looking for .opus and .csv files in: " + AUDIO_DIR)
-    time.sleep(1.0)
 
+    log("[UPLOAD] Looking for .opus and .csv files in: " + AUDIO_DIR)
+    time.sleep(1.0)  # Give time for filesystem flush
+
+    # Find all opus and csv files
     for ext in ('*.opus', '*.csv'):
-        for path in glob.glob(os.path.join(AUDIO_DIR, ext)):
-            if ext == '*.opus' and path == current_recording_path:
-                continue
-            files_to_upload.append(path)
+        files_to_upload.extend(glob.glob(os.path.join(AUDIO_DIR, ext)))
 
     if not files_to_upload:
         log("[UPLOAD] Nothing to upload.")
@@ -228,6 +238,7 @@ def upload_files():
             highlight_led_stop.set()
             highlight_led_stop = None
 
+        # Start pulsing blue
         log(f"[UPLOAD] Uploading {len(file_handles)} files...")
         upload_led_pulse = pulse_led(r=0, g=0, b=1, duration=999)
 
@@ -258,6 +269,7 @@ def upload_files():
         for fh in file_handles.values():
             fh.close()
 
+
 # === AUTO-UPLOAD THREAD ===
 def auto_uploader():
     while True:
@@ -266,6 +278,7 @@ def auto_uploader():
 
 def startup_cleanup_upload():
     log("[STARTUP] Checking for leftover recordings to upload...")
+
     upload_files()
 
 # === MAIN LOOP ===
