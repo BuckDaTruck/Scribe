@@ -286,10 +286,12 @@ def startup_cleanup_upload():
 # === MAIN LOOP ===
 def main():
     global idle_mode
-    print("Starting Scribe Recorder...")
-    print(f"Device ID: {DEVICE_ID}")
-    print(f"Audio Directory: {AUDIO_DIR}")
+    print("[SYSTEM]Starting Scribe Recorder...")
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
+    print(f"[SYSTEM]Device ID: {DEVICE_ID}")
+    print(f"[SYSTEM]Audio Directory: {AUDIO_DIR}")
+    print("[SYSTEM]Log file: " + LOG_PATH)
+    print(f"Welcome to the Scribe Audio Recorder!")
     print("Audio recording will start automatically.")
     print("Audio is sent to BuckleyWiley.com for processing.")
     print("Press the highlight button to mark highlights.")
@@ -301,7 +303,7 @@ def main():
     print("Pulsing Green/Blue: Idle mode")
     print("Red: Error")
     print("White flash: Startup complete")
-    print("Log file: " + LOG_PATH)
+    
 
     startup_sequence()
     startup_cleanup_upload()
