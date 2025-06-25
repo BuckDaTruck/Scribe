@@ -33,17 +33,21 @@ def set_led(r=0, g=0, b=0):
     led_b.value = b
 
 def pulse_led(r=0, g=0, b=0, duration=10, delay=0.05):
+    stop_event = threading.Event()
     def pulser():
         start = time.time()
-        while time.time() - start < duration:
+        while time.time() - start < duration and not stop_event.is_set():
             t = time.time() * 2
             brightness = (math.sin(t) + 1) / 2
             led_r.value = brightness * r
             led_g.value = brightness * g
             led_b.value = brightness * b
             time.sleep(delay)
-        set_led(0, 0, 0)
-    threading.Thread(target=pulser, daemon=True).start()
+        if not stop_event.is_set():
+            set_led(0, 0, 0)
+    thread = threading.Thread(target=pulser, daemon=True)
+    thread.start()
+    return stop_event
 
 def set_error_led():
     set_led(r=1, g=0, b=0)
@@ -52,13 +56,17 @@ def set_error_led():
 current_proc = None
 highlight_lock = threading.Lock()
 highlighting = []
+highlight_led_stop = None
+session_id = uuid.uuid4().hex[:8]
+session_part = 1
 
 # === AUDIO RECORDING ===
 def start_new_recording():
-    global current_proc
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
-    filename = f"recording_{timestamp}_{DEVICE_ID}.wav"
+    global current_proc, session_part
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    filename = f"scribe_v1.1_{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.wav"
     filepath = os.path.join(AUDIO_DIR, filename)
+    session_part += 1
 
     print(f"[INFO] Starting recording: {filename}")
     current_proc = subprocess.Popen([
@@ -70,6 +78,7 @@ def start_new_recording():
 
 # === HIGHLIGHT BUTTON ===
 def on_highlight_pressed():
+    global highlight_led_stop
     press_time = datetime.datetime.now()
     start_time = press_time - datetime.timedelta(minutes=2)
     end_time = press_time + datetime.timedelta(minutes=5)
@@ -81,7 +90,10 @@ def on_highlight_pressed():
     with open(HIGHLIGHT_CSV, 'a') as f:
         f.write(f"{start_time},{press_time},{end_time}\n")
 
-    pulse_led(r=0, g=1, b=0, duration=5*60)  # pulse green for 5 minutes
+    if highlight_led_stop:
+        highlight_led_stop.set()  # Stop any previous pulsing
+
+    highlight_led_stop = pulse_led(r=0, g=1, b=0, duration=5 * 60)
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
@@ -93,6 +105,7 @@ BUTTON_UPLOAD.when_pressed = on_upload_pressed
 
 # === FILE UPLOAD ===
 def upload_files():
+    global highlight_led_stop
     files = {}
 
     # Add highlight CSV
@@ -100,7 +113,7 @@ def upload_files():
         files['data'] = open(HIGHLIGHT_CSV, 'rb')
 
     # Add un-uploaded recordings
-    for path in glob.glob(os.path.join(AUDIO_DIR, f'recording_*_{DEVICE_ID}.wav')):
+    for path in glob.glob(os.path.join(AUDIO_DIR, f'scribe_v1.1_*_{DEVICE_ID}_*.wav')):
         if '_uploaded' not in path:
             key = os.path.basename(path)
             files[key] = open(path, 'rb')
@@ -112,7 +125,12 @@ def upload_files():
     data = {'api_key': API_KEY}
     try:
         print("[UPLOAD] Sending files...")
-        pulse_led(r=0, g=0, b=1, duration=10)  # pulse blue
+
+        if highlight_led_stop:
+            highlight_led_stop.set()  # Stop highlight pulsing
+            highlight_led_stop = None
+
+        set_led(r=0, g=0, b=1)  # solid blue during upload
         response = requests.post(UPLOAD_URL, files=files, data=data)
         print(f"[UPLOAD] Response: {response.status_code} - {response.text}")
 
@@ -123,6 +141,8 @@ def upload_files():
                     new = old.replace('.wav', '_uploaded.wav')
                     os.rename(old, new)
             cleanup_old_recordings()
+
+        set_led(0, 0, 0)  # turn off LED after upload
     except Exception as e:
         print("[UPLOAD] Failed:", e)
         set_error_led()
@@ -143,6 +163,7 @@ def auto_uploader():
 
 # === MAIN LOOP ===
 def main():
+    global current_proc
     print(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
     threading.Thread(target=auto_uploader, daemon=True).start()
 
