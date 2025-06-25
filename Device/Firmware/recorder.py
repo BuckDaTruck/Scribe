@@ -64,7 +64,7 @@ session_part = 1
 def start_new_recording():
     global current_proc, session_part
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    filename = f"scribe_v1.1_{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.wav"
+    filename = f"Scribe_v1.1_{DEVICE_ID}_{timestamp}_session{session_id}_part{session_part}.wav"
     filepath = os.path.join(AUDIO_DIR, filename)
     session_part += 1
 
@@ -160,13 +160,38 @@ def auto_uploader():
     while True:
         time.sleep(CHUNK_DURATION)
         upload_files()
+# === STARTUP SEQUENCE ===
+def startup_sequence():
+    print("[SYSTEM] Running startup LED sequence...")
+
+    colors = [
+        (1, 0, 0),   # Red
+        (1, 0.5, 0), # Orange
+        (1, 1, 0),   # Yellow
+        (0, 1, 0),   # Green
+        (0, 0, 1),   # Blue
+        (0.29, 0, 0.51), # Indigo
+        (0.56, 0, 1), # Violet
+    ]
+
+    for r, g, b in colors:
+        set_led(r, g, b)
+        time.sleep(0.2)
+
+    set_led(0, 0, 0)
+    time.sleep(0.3)
+    set_led(1, 1, 1)  # white flash
+    time.sleep(0.2)
+    set_led(0, 0, 0)
+    print("[SYSTEM] LED sequence complete.")
 
 # === MAIN LOOP ===
 def main():
     global current_proc
+    startup_sequence()  # <- add this line
     print(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
     threading.Thread(target=auto_uploader, daemon=True).start()
-
+    
     while True:
         try:
             if current_proc:
