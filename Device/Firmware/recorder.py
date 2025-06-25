@@ -157,8 +157,8 @@ def start_new_recording():
 def on_highlight_pressed():
     global highlight_led_stop, current_csv_path
     press_time = datetime.datetime.now()
-    start_time = press_time - datetime.timedelta(minutes=2)
-    end_time = press_time + datetime.timedelta(minutes=5)
+    start_time = press_time - datetime.timedelta(seconds=10)
+    end_time = press_time + datetime.timedelta(seconds=10)
 
     log(f"[HIGHLIGHT] Start: {start_time}, End: {end_time}")
     with highlight_lock:
@@ -276,7 +276,7 @@ def upload_files():
 def auto_uploader():
     while True:
         time.sleep(CHUNK_DURATION)
-        upload_files()
+        #upload_files()
 
 def startup_cleanup_upload():
     log("[STARTUP] Checking for leftover recordings to upload...")
