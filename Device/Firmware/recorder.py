@@ -127,6 +127,7 @@ current_csv_path = None
 def start_new_recording():
     global current_arecord_proc, current_lame_proc, session_part, current_csv_path
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    print(f"Session ID {session_id}")
     filename = f"part{session_part}.opus"
     filepath = os.path.join(AUDIO_DIR, filename)
     current_csv_path = "{session_id}_Highlights.csv".format(session_id=session_id)
