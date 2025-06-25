@@ -215,79 +215,76 @@ def upload_files(skip_file=None):
     global highlight_led_stop
     files_to_upload = []
 
-    log("[UPLOAD] Looking for .opus and .csv files in: " + AUDIO_DIR)
+    log(f"[UPLOAD] Scanning for .opus and .csv files in: {AUDIO_DIR}")
     time.sleep(1.0)
 
     for ext in ('*.opus', '*.csv'):
         files_to_upload.extend(glob.glob(os.path.join(AUDIO_DIR, ext)))
 
     if not files_to_upload:
-        log("[UPLOAD] Nothing to upload.")
+        log("[UPLOAD] No files found.")
         return
 
+    skip_abs = os.path.abspath(skip_file) if skip_file else None
     multipart = {
         'api_key': API_KEY,
         'device_id': DEVICE_ID,
         'session_id': session_id
     }
+
     file_handles = {}
-    skip_abs = os.path.abspath(skip_file) if skip_file else None
 
     try:
-        # Open all valid files except the one currently being written
         for path in files_to_upload:
             abs_path = os.path.abspath(path)
             if skip_file and abs_path == skip_abs:
-                log(f"[UPLOAD] Skipping file still being recorded: {path}")
+                log(f"[UPLOAD] Skipping active file: {path}")
                 continue
             try:
-                basename = os.path.basename(path)
-                file_handles[basename] = open(path, 'rb')
-                log(f"[UPLOAD] Preparing to upload: {basename}")
+                file_handles[os.path.basename(path)] = open(path, 'rb')
             except Exception as e:
-                log(f"[UPLOAD] Failed to open file {path}: {e}", level='error')
+                log(f"[UPLOAD] Error opening {path}: {e}", level='error')
 
         if not file_handles:
-            log("[UPLOAD] No files opened for upload after skipping.")
+            log("[UPLOAD] No files available after filtering.")
             return
 
-        # Stop any LED pulse for highlight
         if highlight_led_stop:
             highlight_led_stop.set()
             highlight_led_stop = None
 
-        log(f"[UPLOAD] Uploading {len(file_handles)} files...")
-        upload_led_pulse = pulse_led(r=0, g=0, b=1, duration=999)
+        log(f"[UPLOAD] Uploading {len(file_handles)} file(s)...")
+        pulse = pulse_led(r=0, g=0, b=1, duration=999)
 
         response = requests.post(UPLOAD_URL, files=file_handles, data=multipart)
         log(f"[UPLOAD] Response: {response.status_code} - {response.text}")
 
-        if upload_led_pulse:
-            upload_led_pulse.set()
+        if pulse:
+            pulse.set()
         set_led(0, 0, 0)
 
         if response.status_code == 200:
             for path in files_to_upload:
-                abs_path = os.path.abspath(path)
-                if skip_file and abs_path == skip_abs:
+                if skip_file and os.path.abspath(path) == skip_abs:
                     continue
                 try:
                     os.remove(path)
-                    log(f"[UPLOAD] Deleted uploaded file: {path}")
+                    log(f"[UPLOAD] Deleted: {path}")
                 except Exception as e:
-                    log(f"[UPLOAD] Could not delete file {path}: {e}", level='error')
+                    log(f"[UPLOAD] Delete failed for {path}: {e}", level='error')
             quick_flash(b=1)
         else:
+            log("[UPLOAD] Upload failed.", level='error')
             quick_flash(r=1)
-            log("[UPLOAD] Server error during file upload.", level='error')
 
     except Exception as e:
-        quick_flash(r=1)
         log(f"[UPLOAD] Exception: {e}", level='error')
+        quick_flash(r=1)
         set_error_led()
     finally:
         for fh in file_handles.values():
             fh.close()
+
 
 # === AUTO-UPLOAD THREAD ===
 def auto_uploader():
@@ -305,11 +302,12 @@ def startup_cleanup_upload():
 def main():
     global current_arecord_proc, current_lame_proc
     global idle_mode
-    print("[SYSTEM]Starting Scribe Recorder...")
+
+    print("[SYSTEM] Starting Scribe Recorder...")
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
-    print(f"[SYSTEM]Device ID: {DEVICE_ID}")
-    print(f"[SYSTEM]Audio Directory: {AUDIO_DIR}")
-    print("[SYSTEM]Log file: " + LOG_PATH)
+    print(f"[SYSTEM] Device ID: {DEVICE_ID}")
+    print(f"[SYSTEM] Audio Directory: {AUDIO_DIR}")
+    print("[SYSTEM] Log file: " + LOG_PATH)
     print("Welcome to the Scribe Audio Recorder!")
     print("Audio recording will start automatically.")
     print("Audio is sent to BuckleyWiley.com for processing.")
@@ -325,66 +323,49 @@ def main():
 
     startup_sequence()
     startup_cleanup_upload()
-    threading.Thread(target=auto_uploader, daemon=True).start()
 
+    # Start first recording
     start_new_recording()
+
     while True:
         try:
             if idle_mode:
                 time.sleep(1)
                 continue
 
+            # Record for CHUNK_DURATION
             start_time = time.time()
             while time.time() - start_time < CHUNK_DURATION:
-                time.sleep(1)
                 if idle_mode:
                     break
+                time.sleep(1)
+                set_led(r=0, g=1, b=0)  # Green while recording
 
-                if current_arecord_proc and current_arecord_proc.poll() is None and \
-                current_lame_proc and current_lame_proc.poll() is None:
-                    set_led(r=0, g=1, b=0)
-
-            # ✅ CRITICAL: double check idle mode *again* before starting new recording
             if idle_mode:
                 continue
 
-            just_finished_path = os.path.join(AUDIO_DIR, f"part_{session_part - 1:04}.opus")
+            # Stop current recording
+            if current_arecord_proc:
+                current_arecord_proc.terminate()
+                current_arecord_proc.wait()
+                current_arecord_proc = None
+            if current_lame_proc:
+                current_lame_proc.terminate()
+                current_lame_proc.wait()
+                current_lame_proc = None
+
+            # Upload the previous file
+            previous_path = os.path.join(AUDIO_DIR, f"part_{session_part - 1:04}.opus")
+            upload_files(skip_file=None)  # upload all, including just finished
+
+            # Start a new recording
             start_new_recording()
-
-            start_time = time.time()
-            while time.time() - start_time < CHUNK_DURATION:
-                time.sleep(1)
-                if idle_mode:
-                    break
-
-                # Keep LED green while recording
-                if current_arecord_proc and current_arecord_proc.poll() is None and \
-                   current_lame_proc and current_lame_proc.poll() is None and not idle_mode:
-                    set_led(r=0, g=1, b=0)
-
-            if not idle_mode:
-                # Save just-finished file path
-                just_finished_path = os.path.join(AUDIO_DIR, f"part_{session_part - 1:04}.opus")
-
-                skip_path = just_finished_path
-                # Kill old processes FIRST
-                if current_arecord_proc:
-                    current_arecord_proc.terminate()
-                    current_arecord_proc.wait()
-                    current_arecord_proc = None
-                if current_lame_proc:
-                    current_lame_proc.terminate()
-                    current_lame_proc.wait()
-                    current_lame_proc = None
-
-                # Then start new recording
-                start_new_recording()
-                threading.Thread(target=lambda: upload_files(skip_file=skip_path), daemon=True).start()
 
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
             set_error_led()
             time.sleep(10)
+
 
 
 if __name__ == "__main__":
