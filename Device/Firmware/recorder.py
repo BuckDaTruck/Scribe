@@ -11,7 +11,7 @@ import logging
 from gpiozero import Button, PWMLED
 
 # === CONFIG ===
-DEVICE_ID = "Buckley_Scribe_v1.1_"
+DEVICE_ID = "Buckley-Scribe-v1.1_"
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -232,10 +232,16 @@ def upload_files():
             highlight_led_stop.set()
             highlight_led_stop = None
 
-        set_led(r=0, g=0, b=1)  # Blue = uploading
+        # Start pulsing blue
         log(f"[UPLOAD] Uploading {len(file_handles)} files...")
+        upload_led_pulse = pulse_led(r=0, g=0, b=1, duration=999)
+
         response = requests.post(UPLOAD_URL, files=file_handles, data=multipart)
         log(f"[UPLOAD] Response: {response.status_code} - {response.text}")
+
+        if upload_led_pulse:
+            upload_led_pulse.set()
+        set_led(0, 0, 0)
 
         if response.status_code == 200:
             for path in files_to_upload:
@@ -249,8 +255,6 @@ def upload_files():
             quick_flash(r=1)
             log("[UPLOAD] Server error during file upload.", level='error')
 
-        set_led(0, 0, 0)
-
     except Exception as e:
         quick_flash(r=1)
         log(f"[UPLOAD] Exception: {e}", level='error')
@@ -258,6 +262,7 @@ def upload_files():
     finally:
         for fh in file_handles.values():
             fh.close()
+
 
 # === AUTO-UPLOAD THREAD ===
 def auto_uploader():
