@@ -263,6 +263,7 @@ def upload_files(skip_file=None):
             pulse.set()
         set_led(0, 0, 0)
 
+
         if response.status_code == 200:
             for path in files_to_upload:
                 if skip_file and os.path.abspath(path) == skip_abs:
