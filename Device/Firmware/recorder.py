@@ -141,8 +141,23 @@ def on_highlight_pressed():
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
+    global current_proc
     log("[UPLOAD] Button pressed.")
+
+    # Stop current recording
+    if current_proc:
+        log("[UPLOAD] Terminating current recording...")
+        current_proc.terminate()
+        current_proc.wait()
+        current_proc = None
+
+    # Upload the finished file
     upload_files()
+
+    # Start a new recording
+    log("[UPLOAD] Starting new recording after upload.")
+    start_new_recording()
+
 
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed = on_upload_pressed
