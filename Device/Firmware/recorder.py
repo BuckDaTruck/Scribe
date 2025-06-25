@@ -177,7 +177,7 @@ def upload_files():
     files_to_upload = []
 
     log("[UPLOAD] Looking for .mp3 and .csv files in: " + AUDIO_DIR)
-    time.sleep(0.5)  # Give time for filesystem flush
+    time.sleep(1.0)  # Give time for filesystem flush
 
     # Find all mp3 and csv files
     for ext in ('*.mp3', '*.csv'):
@@ -226,14 +226,6 @@ def upload_files():
         for fh in file_handles.values():
             fh.close()
 
-# === CLEANUP ===
-def cleanup_old_recordings():
-    uploaded_files = sorted(glob.glob(os.path.join(AUDIO_DIR, f'*_uploaded.mp3')))
-    if len(uploaded_files) > MAX_UPLOADED:
-        for f in uploaded_files[:-MAX_UPLOADED]:
-            log(f"[CLEANUP] Deleting old file: {f}")
-            os.remove(f)
-
 # === AUTO-UPLOAD THREAD ===
 def auto_uploader():
     while True:
@@ -243,49 +235,7 @@ def auto_uploader():
 def startup_cleanup_upload():
     log("[STARTUP] Checking for leftover recordings to upload...")
 
-    leftover_mp3s = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.mp3"))
-    leftover_csvs = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv"))
-
-    files = {}
-    for path in leftover_csvs:
-        if not path.endswith("_uploaded.csv"):
-            log(f"[STARTUP] Found leftover CSV: {path}")
-            files[os.path.basename(path)] = open(path, 'rb')
-
-    for path in leftover_mp3s:
-        if not path.endswith("_uploaded.mp3"):
-            log(f"[STARTUP] Found leftover MP3: {path}")
-            files[os.path.basename(path)] = open(path, 'rb')
-
-    if not files:
-        log("[STARTUP] No leftover files to upload.")
-        return
-
-    try:
-        set_led(0, 0, 1)
-        data = {'api_key': API_KEY}
-        log("[STARTUP] Uploading leftover files...")
-        response = requests.post(UPLOAD_URL, files=files, data=data)
-        log(f"[STARTUP] Upload response: {response.status_code} - {response.text}")
-
-        if response.status_code == 200:
-            for f in list(files.keys()):
-                full_path = os.path.join(AUDIO_DIR, f)
-                log(f"[STARTUP] Deleting uploaded file: {full_path}")
-                try:
-                    os.remove(full_path)
-                except Exception as e:
-                    log(f"[STARTUP] Error deleting file: {e}", level='error')
-            quick_flash(b=1)
-        else:
-            log("[STARTUP] Server error during upload.", level='error')
-            quick_flash(r=1)
-
-        set_led(0, 0, 0)
-    except Exception as e:
-        log(f"[STARTUP] Upload failed: {e}", level='error')
-        quick_flash(r=1)
-        set_error_led()
+    upload_files()
 
 # === MAIN LOOP ===
 def main():
