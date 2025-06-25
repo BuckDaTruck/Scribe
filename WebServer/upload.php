@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $deviceId = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', $_POST['device_id'] ?? 'unknown_device');
     $sessionId = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', $_POST['session_id'] ?? 'unknown_session');
 
-    $folderName = "{$deviceId}_{$sessionId}_{$timeFormatted}";
+    $folderName = "{$deviceId}_{$sessionId}";
     $sessionDir = $uploadBaseDir . $folderName . '/';
     if (!is_dir($sessionDir)) {
         mkdir($sessionDir, 0775, true);
