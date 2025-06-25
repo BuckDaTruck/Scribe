@@ -229,7 +229,7 @@ def upload_files():
     multipart = {
         'api_key': API_KEY,
         'device_id': DEVICE_ID,
-        'session_id': SESSION_ID
+        'session_id': session_id
     }
     file_handles = {}
 
