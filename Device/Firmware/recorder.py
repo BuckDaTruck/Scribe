@@ -212,7 +212,7 @@ BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed = on_upload_pressed
 
 # === FILE UPLOAD ===
-def upload_files():
+def upload_files(skip_file=None):
     global highlight_led_stop
     files_to_upload = []
 
@@ -255,6 +255,10 @@ def upload_files():
         if response.status_code == 200:
             for path in files_to_upload:
                 try:
+                    # Skip deletion if this file is the current recording
+                    if skip_file and os.path.samefile(path, skip_file):
+                        log(f"[UPLOAD] Skipped deleting current recording file: {path}")
+                        continue
                     os.remove(path)
                     log(f"[UPLOAD] Deleted uploaded file: {path}")
                 except Exception as e:
@@ -330,14 +334,11 @@ def main():
                     current_lame_proc.terminate()
                     current_lame_proc.wait()
                     # Capture current session_id and file info before it changes
-                    prev_session_id = session_id
-                    prev_csv_path = current_csv_path
+                   
 
                     # Start the next recording immediately
-                    start_new_recording()
-
-                    # Upload the previous chunk in a background thread
-                    threading.Thread(target=upload_files, daemon=True).start()
+                    new_filepath = start_new_recording()
+                    threading.Thread(target=lambda: upload_files(skip_file=new_filepath), daemon=True).start()
 
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
