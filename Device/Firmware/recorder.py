@@ -152,15 +152,20 @@ def upload_files():
     global highlight_led_stop
     files = {}
 
-    # Add per-recording CSVs
-    for csv_path in glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv")):
+    log("[UPLOAD] Looking for files in: " + AUDIO_DIR)
+
+    # Collect CSVs
+    csv_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.csv"))
+    for csv_path in csv_paths:
+        log(f"[UPLOAD] Found CSV: {csv_path}")
         files[os.path.basename(csv_path)] = open(csv_path, 'rb')
 
-    # Add un-uploaded recordings
-    for path in glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.wav")):
+    # Collect WAVs that are not marked uploaded
+    wav_paths = glob.glob(os.path.join(AUDIO_DIR, f"Scribe_v1.1_*_{DEVICE_ID}_*.wav"))
+    for path in wav_paths:
         if '_uploaded' not in path:
-            key = os.path.basename(path)
-            files[key] = open(path, 'rb')
+            log(f"[UPLOAD] Found WAV: {path}")
+            files[os.path.basename(path)] = open(path, 'rb')
 
     if not files:
         log("[UPLOAD] Nothing to upload.")
@@ -196,6 +201,7 @@ def upload_files():
         quick_flash(r=1)
         log(f"[UPLOAD] Failed: {e}", level='error')
         set_error_led()
+
 
 # === CLEANUP ===
 def cleanup_old_recordings():
