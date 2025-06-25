@@ -11,7 +11,7 @@ import logging
 from gpiozero import Button, PWMLED
 
 # === CONFIG ===
-DEVICE_ID = "Buckley-Scribe-v1.1_"
+DEVICE_ID = "Buckley-Scribe-v1.1"
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -286,7 +286,23 @@ def startup_cleanup_upload():
 # === MAIN LOOP ===
 def main():
     global idle_mode
+    print("Starting Scribe Recorder...")
+    print(f"Device ID: {DEVICE_ID}")
+    print(f"Audio Directory: {AUDIO_DIR}")
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
+    print("Audio recording will start automatically.")
+    print("Audio is sent to BuckleyWiley.com for processing.")
+    print("Press the highlight button to mark highlights.")
+    print("Press the upload button to stop/start recording and upload.")
+    print("The LEDS will indicate status.")
+    print("Green: Recording")
+    print("Pulsing Green: Highlighting")
+    print("Pulsing Blue: Uploading")
+    print("Pulsing Green/Blue: Idle mode")
+    print("Red: Error")
+    print("White flash: Startup complete")
+    print("Log file: " + LOG_PATH)
+
     startup_sequence()
     startup_cleanup_upload()
     threading.Thread(target=auto_uploader, daemon=True).start()
