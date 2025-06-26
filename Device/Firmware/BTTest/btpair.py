@@ -3,7 +3,7 @@ import subprocess
 import time
 import requests
 from gpiozero import Button, PWMLED
-
+#:~ $ ./start_BT.sh 
 # === GPIO SETUP ===
 BUTTON_UPLOAD = Button(27, bounce_time=0.1)
 led_r = PWMLED(22)

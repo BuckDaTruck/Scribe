@@ -9,7 +9,7 @@ import requests
 import math
 import logging
 from gpiozero import Button, PWMLED
-
+#:~ $ ./start_scribe.sh 
 # === CONFIG ===
 DEVICE_ID = "Buckley-Scribe-v1.1"
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
