@@ -10,7 +10,7 @@ led_r = PWMLED(22)
 led_g = PWMLED(23)
 led_b = PWMLED(24)
 
-# === FILE LOCATION ===
+# === FILE LOCATION FOR SAVED MAC ===
 MAC_FILE_PATH = "/etc/scribe/phone_mac.conf"
 
 # === LED CONTROL ===
@@ -30,7 +30,23 @@ def led_pulse(color_fn, duration=5):
             time.sleep(0.01)
     led_color(0, 0, 0)
 
-# === BT MAC UTILITIES ===
+# === INTERNET CHECK ===
+def check_internet():
+    led_color(0, 0, 1)  # Blue = checking
+    try:
+        response = requests.get("http://google.com", timeout=5)
+        if response.ok:
+            print("[NET] Internet reachable via BT.")
+            led_color(0, 1, 0)  # Green
+        else:
+            raise Exception("Bad status")
+    except:
+        print("[NET] Internet check failed.")
+        led_color(1, 0, 0)  # Red
+    time.sleep(5)
+    led_color(0, 0, 0)
+
+# === MAC UTILITIES ===
 def get_saved_mac():
     if os.path.exists(MAC_FILE_PATH):
         with open(MAC_FILE_PATH, "r") as f:
@@ -38,47 +54,59 @@ def get_saved_mac():
     return None
 
 def save_mac(mac):
+    os.makedirs(os.path.dirname(MAC_FILE_PATH), exist_ok=True)
     with open(MAC_FILE_PATH, "w") as f:
         f.write(mac.strip().upper())
+
+def is_mac_paired(mac):
+    output = subprocess.getoutput("bluetoothctl paired-devices")
+    return mac.upper() in output
 
 def find_newly_paired_device():
     output = subprocess.getoutput("bluetoothctl paired-devices")
     devices = output.strip().splitlines()
     if not devices:
         return None
-    return devices[-1].split()[1]  # Grab MAC from last paired device
+    return devices[-1].split()[1]  # Return MAC of last paired device
 
-def is_mac_paired(mac):
-    output = subprocess.getoutput("bluetoothctl paired-devices")
-    return mac.upper() in output
-
-# === CONNECTION FLOW ===
+# === PAIRING ===
 def start_pairing():
     print("[BT] Starting pairing mode...")
     led_color(0.5, 0.5, 0)  # Yellow
 
-    # Start bluetoothctl in interactive mode and handle output
-    print("[BT] Running pairing setup...")
-    subprocess.run(["bluetoothctl", "discoverable", "on"])
-    subprocess.run(["bluetoothctl", "pairable", "on"])
-    subprocess.run(["bluetoothctl", "agent", "KeyboardDisplay"])
-    subprocess.run(["bluetoothctl", "default-agent"])
+    pairing_script = """
+    agent KeyboardDisplay
+    default-agent
+    discoverable on
+    pairable on
+    scan on
+    """
+    subprocess.run(['bluetoothctl'], input=pairing_script.encode())
 
     print("[BT] Pairing mode enabled. Your phone should now prompt to pair.")
-    print("[BT] If a PIN is requested, confirm it matches the one below (if shown).")
-
-    # Live log pairing output
-    print("[BT] Waiting 30 seconds for connection...")
+    print("[BT] If a PIN is requested, confirm it in terminal or on phone.")
     led_pulse(lambda v: setattr(led_b, 'value', v), duration=30)
+
+    cleanup_script = """
+    scan off
+    discoverable off
+    pairable off
+    """
+    subprocess.run(['bluetoothctl'], input=cleanup_script.encode())
+
     led_color(0, 0, 0)
 
-    # Try to fetch the latest paired MAC address
     new_mac = find_newly_paired_device()
     if new_mac:
         print(f"[BT] Detected new device: {new_mac}")
         save_mac(new_mac)
     else:
         print("[BT] No device successfully paired.")
+
+# === PAN CONNECT ===
+def connect_to_phone_pan(mac):
+    print(f"[BT] Connecting to {mac} via PAN...")
+    subprocess.run(["bt-pan", "client", "--wait", mac])
 
 # === BUTTON HANDLER ===
 def on_upload_pressed():
@@ -89,7 +117,7 @@ def on_upload_pressed():
     print("[ACTION] Button pressed.")
     saved_mac = get_saved_mac()
     if saved_mac and is_mac_paired(saved_mac):
-        print(f"[BT] Already paired with {saved_mac}.")
+        print(f"[BT] Already paired with {saved_mac}. Connecting...")
         connect_to_phone_pan(saved_mac)
     else:
         print("[BT] No known paired phone. Entering pairing mode.")
