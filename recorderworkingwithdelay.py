@@ -20,7 +20,7 @@ UPLOAD_URL = 'https://buckleywiley.com/Scribe/upload.php'
 API_KEY = '@YourPassword123'
 BUTTON_HIGHLIGHT = Button(17, bounce_time=0.1)
 BUTTON_UPLOAD = Button(27, bounce_time=0.1)
-CHUNK_DURATION = 20 * 60  # 30 minutes
+CHUNK_DURATION = .5 * 60  # 30 minutes
 MAX_UPLOADED = 5
 last_upload_time = 0
 UPLOAD_DEBOUNCE_SEC = 2.0  # Prevent triggering more than once every 2 seconds
