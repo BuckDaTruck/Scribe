@@ -20,7 +20,7 @@ UPLOAD_URL = 'https://buckleywiley.com/Scribe/upload.php'
 API_KEY = '@YourPassword123'
 BUTTON_HIGHLIGHT = Button(17, bounce_time=0.1)
 BUTTON_UPLOAD = Button(27, bounce_time=0.1)
-CHUNK_DURATION = 20 * 60  # 30 minutes
+CHUNK_DURATION = .5 * 60  # 30 minutes
 MAX_UPLOADED = 5
 last_upload_time = 0
 UPLOAD_DEBOUNCE_SEC = 2.0  # Prevent triggering more than once every 2 seconds
@@ -192,7 +192,8 @@ def on_upload_pressed():
         if current_lame_proc:
             current_lame_proc.terminate()
             current_lame_proc.wait()
-        upload_files()
+        prev_filename = f"part_{session_part - 1:04}.opus"
+        upload(prev_filename)
         idle_mode = True
         pulse_event.clear()
         pulse_event = threading.Event()
@@ -211,68 +212,52 @@ BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed = on_upload_pressed
 
 # === FILE UPLOAD ===
-def upload_files(skip_file=None):
+def upload(target_opus_filename):
     global highlight_led_stop
-    files_to_upload = []
+    opus_path = os.path.join(AUDIO_DIR, target_opus_filename)
 
-    log(f"[UPLOAD] Scanning for .opus and .csv files in: {AUDIO_DIR}")
-    time.sleep(1.0)
-
-    for ext in ('*.opus', '*.csv'):
-        files_to_upload.extend(glob.glob(os.path.join(AUDIO_DIR, ext)))
-
-    if not files_to_upload:
-        log("[UPLOAD] No files found.")
+    if not os.path.isfile(opus_path):
+        log(f"[UPLOAD] File not found: {opus_path}", level='error')
         return
 
-    skip_abs = os.path.abspath(skip_file) if skip_file else None
+    # Find the CSV file (current session)
+    csv_files = glob.glob(os.path.join(AUDIO_DIR, "*.csv"))
+    csv_path = csv_files[0] if csv_files else None
+
     multipart = {
         'api_key': API_KEY,
         'device_id': DEVICE_ID,
         'session_id': session_id
     }
 
-    file_handles = {}
-
+    files = {}
     try:
-        for path in files_to_upload:
-            abs_path = os.path.abspath(path)
-            if skip_file and abs_path == skip_abs:
-                log(f"[UPLOAD] Skipping active file: {path}")
-                continue
-            try:
-                file_handles[os.path.basename(path)] = open(path, 'rb')
-            except Exception as e:
-                log(f"[UPLOAD] Error opening {path}: {e}", level='error')
+        files[target_opus_filename] = open(opus_path, 'rb')
+        if csv_path:
+            files[os.path.basename(csv_path)] = open(csv_path, 'rb')
 
-        if not file_handles:
-            log("[UPLOAD] No files available after filtering.")
-            return
-
-        if highlight_led_stop:
-            highlight_led_stop.set()
-            highlight_led_stop = None
-
-        log(f"[UPLOAD] Uploading {len(file_handles)} file(s)...")
+        log(f"[UPLOAD] Uploading: {list(files.keys())}")
         pulse = pulse_led(r=0, g=0, b=1, duration=999)
 
-        response = requests.post(UPLOAD_URL, files=file_handles, data=multipart)
+        response = requests.post(UPLOAD_URL, files=files, data=multipart)
         log(f"[UPLOAD] Response: {response.status_code} - {response.text}")
 
         if pulse:
             pulse.set()
         set_led(0, 0, 0)
 
-
         if response.status_code == 200:
-            for path in files_to_upload:
-                if skip_file and os.path.abspath(path) == skip_abs:
-                    continue
+            try:
+                os.remove(opus_path)
+                log(f"[UPLOAD] Deleted: {opus_path}")
+            except Exception as e:
+                log(f"[UPLOAD] Delete failed for {opus_path}: {e}", level='error')
+            if csv_path:
                 try:
-                    os.remove(path)
-                    log(f"[UPLOAD] Deleted: {path}")
+                    os.remove(csv_path)
+                    log(f"[UPLOAD] Deleted: {csv_path}")
                 except Exception as e:
-                    log(f"[UPLOAD] Delete failed for {path}: {e}", level='error')
+                    log(f"[UPLOAD] Delete failed for {csv_path}: {e}", level='error')
             quick_flash(b=1)
         else:
             log("[UPLOAD] Upload failed.", level='error')
@@ -283,8 +268,8 @@ def upload_files(skip_file=None):
         quick_flash(r=1)
         set_error_led()
     finally:
-        for fh in file_handles.values():
-            fh.close()
+        for f in files.values():
+            f.close()
 
 
 # === AUTO-UPLOAD THREAD ===
@@ -293,10 +278,6 @@ def auto_uploader():
         time.sleep(CHUNK_DURATION)
         #upload_files()
 
-def startup_cleanup_upload():
-    log("[STARTUP] Checking for leftover recordings to upload...")
-
-    upload_files()
     
 
 # === MAIN LOOP ===
@@ -323,7 +304,6 @@ def main():
     print("White flash: Startup complete")
 
     startup_sequence()
-    startup_cleanup_upload()
 
     # Start first recording
     start_new_recording()
@@ -355,12 +335,15 @@ def main():
                 current_lame_proc.wait()
                 current_lame_proc = None
 
-            # Upload the previous file
-            previous_path = os.path.join(AUDIO_DIR, f"part_{session_part - 1:04}.opus")
-            upload_files(skip_file=None)  # upload all, including just finished
-
+            #remember Previous filename
+            prev_filename = f"part_{session_part - 1:04}.opus"
             # Start a new recording
             start_new_recording()
+            # Upload the previous file (not the one about to be created)
+            upload(prev_filename)
+
+            
+            
 
         except Exception as e:
             log(f"[MAIN] Error: {e}", level='error')
