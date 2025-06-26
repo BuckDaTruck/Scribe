@@ -56,39 +56,29 @@ def is_mac_paired(mac):
 def start_pairing():
     print("[BT] Starting pairing mode...")
     led_color(0.5, 0.5, 0)  # Yellow
+
+    # Start bluetoothctl in interactive mode and handle output
+    print("[BT] Running pairing setup...")
     subprocess.run(["bluetoothctl", "discoverable", "on"])
     subprocess.run(["bluetoothctl", "pairable", "on"])
-    subprocess.run(["bluetoothctl", "agent", "NoInputNoOutput"])
+    subprocess.run(["bluetoothctl", "agent", "KeyboardDisplay"])
     subprocess.run(["bluetoothctl", "default-agent"])
-    print("[BT] Pairing mode enabled. Connect from your phone now.")
+
+    print("[BT] Pairing mode enabled. Your phone should now prompt to pair.")
+    print("[BT] If a PIN is requested, confirm it matches the one below (if shown).")
+
+    # Live log pairing output
+    print("[BT] Waiting 30 seconds for connection...")
     led_pulse(lambda v: setattr(led_b, 'value', v), duration=30)
     led_color(0, 0, 0)
 
+    # Try to fetch the latest paired MAC address
     new_mac = find_newly_paired_device()
     if new_mac:
         print(f"[BT] Detected new device: {new_mac}")
         save_mac(new_mac)
     else:
-        print("[BT] No device paired. Try again.")
-
-def connect_to_phone_pan(mac):
-    print(f"[BT] Connecting to {mac}...")
-    subprocess.run(["bt-pan", "client", "--wait", mac])
-
-def check_internet():
-    led_color(0, 0, 1)  # Blue = checking
-    try:
-        response = requests.get("http://google.com", timeout=5)
-        if response.ok:
-            print("[NET] Internet reachable via BT.")
-            led_color(0, 1, 0)  # Green = success
-        else:
-            raise Exception("Bad status")
-    except:
-        print("[NET] Internet check failed.")
-        led_color(1, 0, 0)  # Red = fail
-    time.sleep(5)
-    led_color(0, 0, 0)
+        print("[BT] No device successfully paired.")
 
 # === BUTTON HANDLER ===
 def on_upload_pressed():
