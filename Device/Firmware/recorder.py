@@ -325,23 +325,21 @@ def main():
             if idle_mode:
                 continue
 
-            # Save the old process references
-            old_arecord_proc = current_arecord_proc
-            old_lame_proc = current_lame_proc
-            prev_filename = f"part_{session_part:04}.opus"  # use part_X before it's incremented
+            # Stop current recording
+            if current_arecord_proc:
+                current_arecord_proc.terminate()
+                current_arecord_proc.wait()
+                current_arecord_proc = None
+            if current_lame_proc:
+                current_lame_proc.terminate()
+                current_lame_proc.wait()
+                current_lame_proc = None
 
-            # Start a new recording (updates current_arecord_proc and current_lame_proc)
+            #remember Previous filename
+            prev_filename = f"part_{session_part - 1:04}.opus"
+            # Start a new recording
             start_new_recording()
-
-            # Now it's safe to stop the *old* recording
-            if old_arecord_proc:
-                old_arecord_proc.terminate()
-                old_arecord_proc.wait()
-            if old_lame_proc:
-                old_lame_proc.terminate()
-                old_lame_proc.wait()
-
-            # Upload the previous file
+            # Upload the previous file (not the one about to be created)
             upload(prev_filename)
 
             
