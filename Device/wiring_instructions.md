@@ -34,9 +34,9 @@
 
 | LED Pin | Resistor | Raspberry Pi Pin | GPIO   | Color  |
 | ------- | -------- | ---------------- | ------ | ------ |
-| R       | 330Ω     | Pin 15           | GPIO22 | Red    |
+| R       | 330Ω     | Pin 18           | GPIO24 | Red    |
 | G       | 330Ω     | Pin 16           | GPIO23 | Green  |
-| B       | 330Ω     | Pin 18           | GPIO24 | Blue   |
+| B       | 330Ω     | Pin 15           | GPIO22 | Blue   |
 | Cathode | None     | Pin 14 (GND)     | GND    | Ground |
 
 ---
@@ -45,8 +45,8 @@
 
 | Button | Raspberry Pi Pin | GPIO   | Function          |
 | ------ | ---------------- | ------ | ----------------- |
-| 1      | Pin 11           | GPIO17 | Highlight trigger |
-| 2      | Pin 13           | GPIO27 | Upload trigger    |
+| 1      | Pin 11           | GPIO17 | Upload trigger    |
+| 2      | Pin 13           | GPIO27 | Highlight trigger |
 
 Use internal pull-up resistors; buttons should connect GPIO to **GND** when pressed.
 

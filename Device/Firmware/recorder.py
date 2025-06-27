@@ -18,8 +18,8 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 
 UPLOAD_URL = 'https://buckleywiley.com/Scribe/upload.php'
 API_KEY = '@YourPassword123'
-BUTTON_HIGHLIGHT = Button(17, bounce_time=0.1)
-BUTTON_UPLOAD = Button(27, bounce_time=0.1)
+BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)
+BUTTON_UPLOAD = Button(17, bounce_time=0.1)
 CHUNK_DURATION = .5 * 60  # 30 minutes
 MAX_UPLOADED = 5
 last_upload_time = 0
@@ -40,9 +40,9 @@ def log(message, level='info'):
     getattr(logging, level)(message)
 
 # === LED SETUP ===
-led_r = PWMLED(22)
+led_r = PWMLED(24)
 led_g = PWMLED(23)
-led_b = PWMLED(24)
+led_b = PWMLED(22)
 
 def set_led(r=0, g=0, b=0):
     led_r.value = r
