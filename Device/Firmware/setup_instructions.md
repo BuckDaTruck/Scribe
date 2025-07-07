@@ -93,7 +93,23 @@ systemctl daemon-reload
 systemctl enable recorder.service
 systemctl start recorder.service
 ```
+To stop the Scribe service immediately and prevent it from coming back on reboot, you can use systemd’s stop/disable commands:
 
+bash
+Copy
+Edit
+# Stop it right now
+sudo systemctl stop scribe.service
+
+# Prevent it from starting at boot
+sudo systemctl disable scribe.service
+If you ever want to re-enable it:
+
+bash
+Copy
+Edit
+sudo systemctl enable scribe.service
+sudo systemctl start  scribe.service
 ---
 
 ## Step 6: Boot and Deploy
