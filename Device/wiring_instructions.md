@@ -1,16 +1,21 @@
 # Raspberry Pi Audio Logger Wiring Instructions
 
-## Components
+## Parts List
 
 - **Raspberry Pi Zero 2 W**
 - **INMP441 Microphone (I2S)**
 - **RGB LED (Common Cathode)**
 - **2x Push Buttons**
 - **3x 330Ω Resistors (for RGB LED)**
+- **Breadboard and hookup wire**
+- **Scribe – Back Shell (3D printed)**
+- **Scribe – TopFrame (3D printed)**
+- **2× Scribe – Button Extender (3D printed)**
+- **Lanyard or wrist strap**
 
 ---
 
-## Wiring Diagram
+## Wiring Instructions
 
 ### INMP441 Microphone (I2S)
 
@@ -49,6 +54,13 @@
 | 2      | Pin 13           | GPIO27 | Highlight trigger |
 
 Use internal pull-up resistors; buttons should connect GPIO to **GND** when pressed.
+
+---
+
+### Breadboard Layout
+
+Refer to [board.jpeg](board.jpeg) for an example layout showing how the microphone,
+buttons and LED line up on a half-size breadboard.
 
 ---
 
