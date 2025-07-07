@@ -11,7 +11,7 @@ import math
 from gpiozero import Button, PWMLED
 
 # === CONFIG ===
-DEVICE_ID        = "Buckley-Scribe-v1.2"
+DEVICE_ID        = "Buckley-Scribe-v1.2"#stable
 SCRIPT_DIR       = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR        = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
