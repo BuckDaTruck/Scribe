@@ -18,8 +18,8 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 
 UPLOAD_URL       = 'https://buckleywiley.com/Scribe/upload2.php'
 API_KEY          = '@YourPassword123'
-BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)  # green button
-BUTTON_UPLOAD    = Button(17, bounce_time=0.1)  # blue button
+BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)
+BUTTON_UPLOAD    = Button(17, bounce_time=0.1)
 
 # audio parameters
 SAMPLE_RATE      = 88200
@@ -61,52 +61,47 @@ def set_led(r=0, g=0, b=0):
 recording_start_time = None
 highlight_start       = None
 highlight_until       = 0
+crossfade_start_time  = time.time()
 
+# === LED CONTROLLER ===
 def led_controller():
-    """Background thread: sets LED based on idle/record/highlight state."""
-    global recording_start_time, highlight_start, highlight_until
+    global recording_start_time, highlight_start, highlight_until, crossfade_start_time
 
-    crossfade_period = 4.0    # seconds for full blue↔green cycle
-    pulse_period     = 2.0    # seconds for a full pulse up/down
-    refresh_rate     = 0.05   # 50 ms
+    crossfade_period = 4.0    # seconds for blue↔green cycle
+    pulse_period     = 2.0    # pulse period for highlights and blue pulses
+    refresh_rate     = 0.05   # 50 ms update
 
     while True:
         now = time.time()
 
-        if idle_mode:
-            # Highlight override?
-            if highlight_start and now < highlight_until:
-                # smooth green pulse
-                phase     = ((now - highlight_start) % pulse_period) / pulse_period
-                brightness = (math.sin(2 * math.pi * phase) + 1) / 2
-                set_led(0, brightness, 0)
-            else:
-                # crossfade blue↔green
-                phase = (now % crossfade_period) / crossfade_period
-                g_val = phase
-                b_val = 1 - phase
-                set_led(0, g_val, b_val)
+        # Highlight pulse only during recording
+        if not idle_mode and highlight_start and now < highlight_until:
+            phase     = ((now - highlight_start) % pulse_period) / pulse_period
+            brightness = (math.sin(2 * math.pi * phase) + 1) / 2
+            set_led(0, brightness, 0)
 
-            # Reset recording timer in case we just stopped
+        # Idle mode: smooth crossfade starting at blue
+        elif idle_mode:
+            phase = ((now - crossfade_start_time) % crossfade_period) / crossfade_period
+            g_val = phase
+            b_val = 1 - phase
+            set_led(0, g_val, b_val)
             recording_start_time = None
 
+        # Recording mode without highlight
         else:
-            # recording mode
             if recording_start_time is None:
                 recording_start_time = now
-
+                highlight_until = 0
             elapsed = now - recording_start_time
             if elapsed < 5:
-                # pulse blue for first 5 seconds
+                # blue pulse for first 5s
                 phase     = (elapsed % pulse_period) / pulse_period
                 brightness = (math.sin(2 * math.pi * phase) + 1) / 2
                 set_led(0, 0, brightness)
             else:
-                # solid green afterwards
+                # solid green
                 set_led(0, 1, 0)
-
-            # clear any highlight once recording begins
-            highlight_until = 0
 
         time.sleep(refresh_rate)
 
@@ -137,7 +132,6 @@ def stream_audio():
     wf.setsampwidth(BYTES_PER_SAMPLE)
     wf.setframerate(SAMPLE_RATE)
 
-    # arecord → raw PCM
     arec = subprocess.Popen([
         'arecord', '-D', 'plughw:1,0',
         '-f', 'S16_LE', '-r', str(SAMPLE_RATE), '-c', str(CHANNELS),
@@ -146,7 +140,6 @@ def stream_audio():
         '-t', 'raw', '-q', '-'
     ], stdout=subprocess.PIPE)
 
-    # sox gain → raw PCM
     sox = subprocess.Popen([
         'sox',
         '-t', 'raw', '-r', str(SAMPLE_RATE),
@@ -161,10 +154,8 @@ def stream_audio():
             chunk = sox.stdout.read(CHUNK_SIZE)
             if not chunk:
                 break
-
             wf.writeframes(chunk)
             threading.Thread(target=async_upload, args=(chunk,), daemon=True).start()
-
     finally:
         wf.close()
         arec.terminate()
@@ -177,36 +168,34 @@ def on_highlight_pressed():
     t0 = datetime.datetime.now() - datetime.timedelta(seconds=10)
     t1 = datetime.datetime.now()
     t2 = t1 + datetime.timedelta(seconds=10)
-    csv_entry = f"{t0},{t1},{t2}\n"
+    entry = f"{t0},{t1},{t2}\n"
     csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
     with open(csv_path, 'a') as f:
-        f.write(csv_entry)
+        f.write(entry)
 
-    # schedule 10s of smooth green-pulsing
     highlight_start = time.time()
     highlight_until = highlight_start + 10
 
     threading.Thread(
         target=async_upload,
-        args=(csv_entry.encode('utf-8'), True),
+        args=(entry.encode('utf-8'), True),
         daemon=True
     ).start()
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
-    global idle_mode, last_upload_time, session_id
+    global idle_mode, last_upload_time, session_id, crossfade_start_time
     now = time.time()
     if now - last_upload_time < UPLOAD_DEBOUNCE_SEC:
         return
     last_upload_time = now
 
     if not idle_mode:
-        # stop recording
         idle_mode = True
+        crossfade_start_time = now
         log("[UPLOAD] Stopping & sending highlights CSV…")
-        on_highlight_pressed()   # send final highlight as CSV
+        on_highlight_pressed()
     else:
-        # start new recording session
         session_id = uuid.uuid4().hex[:8]
         idle_mode = False
         threading.Thread(target=stream_audio, daemon=True).start()
@@ -221,19 +210,16 @@ if __name__ == "__main__":
       f"[SYSTEM] Device ID: {DEVICE_ID}",
       f"[SYSTEM] Audio Dir: {AUDIO_DIR}",
       f"[SYSTEM] Log File: {LOG_PATH}"
-    ]: log(m)
+    ]:
+        log(m)
 
-    # Start LED manager
     threading.Thread(target=led_controller, daemon=True).start()
 
-    # small white flash at startup
     set_led(1,1,1)
     time.sleep(0.1)
     set_led(0,0,0)
 
-    # begin streaming immediately
     threading.Thread(target=stream_audio, daemon=True).start()
 
-    # keep main thread alive
     while True:
         time.sleep(1)
