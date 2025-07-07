@@ -16,7 +16,7 @@ SCRIPT_DIR       = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR        = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-UPLOAD_URL       = 'https://buckleywiley.com/Scribe/upload2.php'
+UPLOAD_URL       = 'https://buckleywiley.com/Scribe/upload.php'
 API_KEY          = '@YourPassword123'
 BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)
 BUTTON_UPLOAD    = Button(17, bounce_time=0.1)
@@ -216,12 +216,29 @@ BUTTON_UPLOAD.when_pressed    = on_upload_pressed
 
 if __name__ == "__main__":
     for m in [
-      "[SYSTEM] Starting Scribe Recorder…",
-      f"[SYSTEM] Device ID: {DEVICE_ID}",
-      f"[SYSTEM] Audio Dir: {AUDIO_DIR}",
-      f"[SYSTEM] Log File: {LOG_PATH}"
+        "[SYSTEM] Starting Scribe Recorder…",
+        f"[SYSTEM] Device ID: {DEVICE_ID}",
+        f"[SYSTEM] Audio Dir: {AUDIO_DIR}",
+        f"[SYSTEM] Log File: {LOG_PATH}"
     ]:
         log(m)
+        print(m)
+
+    instructions = [
+        "[SYSTEM] Instructions:",
+        "[SYSTEM] - Press the Green Highlight button to mark a 10-second highlight in the recording.",
+        "[SYSTEM] - Press the Blue Upload button to toggle between recording and idle mode.",
+        "[SYSTEM] LED Behavior:",
+        "[SYSTEM] - Idle Mode: Smooth crossfade between blue and green.",
+        "[SYSTEM] - Recording Mode: Blue pulse for the first 5 seconds, then solid green.",
+        "[SYSTEM] - Highlight: Green pulse for 10 seconds.",
+        "[SYSTEM] Upload Server:",
+        f"[SYSTEM] - Audio and highlights are uploaded to: {UPLOAD_URL}"
+    ]
+
+    for line in instructions:
+        log(line)
+        print(line)
 
     # start LED controller
     threading.Thread(target=led_controller, daemon=True).start()
