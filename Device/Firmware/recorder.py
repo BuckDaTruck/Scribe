@@ -11,233 +11,189 @@ import logging
 from gpiozero import Button, PWMLED
 
 # === CONFIG ===
-DEVICE_ID = "Buckley-Scribe-v1.1"
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-AUDIO_DIR = SCRIPT_DIR
+DEVICE_ID      = "Buckley-Scribe-v1.1"
+SCRIPT_DIR     = os.path.dirname(os.path.realpath(__file__))
+AUDIO_DIR      = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-# Updated endpoint for streaming and CSV uploads
-UPLOAD_URL = 'https://buckleywiley.com/Scribe/upload2.php'
-API_KEY = '@YourPassword123'
-# Button assignments: GPIO17 = blue button (upload/pause), GPIO27 = green button (highlight)
-BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)  # Green button
-BUTTON_UPLOAD = Button(17, bounce_time=0.1)     # Blue button
-UPLOAD_DEBOUNCE_SEC = 2.0  # Prevent triggering more than once every 2 seconds
+UPLOAD_URL     = 'https://buckleywiley.com/Scribe/upload2.php'
+API_KEY        = '@YourPassword123'
+BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)  # green button
+BUTTON_UPLOAD    = Button(17, bounce_time=0.1)  # blue button
 
-# Chunk settings to upload ~4s of audio per upload
-SAMPLE_RATE = 88200            # samples per second
-BYTES_PER_SAMPLE = 2           # 16-bit audio => 2 bytes
-CHUNK_DURATION_SEC = 2         # seconds per chunk
-CHUNK_SIZE = SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_DURATION_SEC  # bytes per chunk
+# stream settings
+SAMPLE_RATE    = 88200          # must match arecord/sox
+BYTES_PER_SAMPLE = 2            # 16-bit = 2 bytes
+CHANNELS       = 1
+CHUNK_SECONDS  = 4              # send every 4 seconds
+CHUNK_SIZE     = SAMPLE_RATE * BYTES_PER_SAMPLE * CHANNELS * CHUNK_SECONDS  # ~705600 bytes
+
+# ALSA buffer tuning to avoid overruns
+ARECORD_BUFFER_SIZE = 1048576  # 1 MB
+ARECORD_PERIOD_SIZE = 65536    # 64 KB
+
+last_upload_time = 0
+UPLOAD_DEBOUNCE_SEC = 2.0
 
 # === LOGGING SETUP ===
 LOG_PATH = os.path.join(SCRIPT_DIR, 'scribe.log')
 logging.basicConfig(
-    filename=LOG_PATH,
-    filemode='a',
+    filename=LOG_PATH, filemode='a',
     format='[%(asctime)s] %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    level=logging.INFO
+    datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO
 )
-
-def log(message, level='info'):
-    print(message)
-    getattr(logging, level)(message)
+def log(msg, level='info'):
+    print(msg)
+    getattr(logging, level)(msg)
 
 # === LED SETUP ===
-led_r = PWMLED(24)
-led_g = PWMLED(23)
-led_b = PWMLED(22)
-
-def set_led(r=0, g=0, b=0):
-    led_r.value = r
-    led_g.value = g
-    led_b.value = b
-
-def pulse_led(r=0, g=0, b=0, duration=10, delay=0.05):
-    stop_event = threading.Event()
-    def pulser():
-        start = time.time()
-        while time.time() - start < duration and not stop_event.is_set():
-            t = time.time() * 2
-            brightness = (math.sin(t) + 1) / 2
-            led_r.value = brightness * r
-            led_g.value = brightness * g
-            led_b.value = brightness * b
-            time.sleep(delay)
-        if not stop_event.is_set():
-            set_led(0, 0, 0)
-    thread = threading.Thread(target=pulser, daemon=True)
-    thread.start()
-    return stop_event
-
-# === IDLE MODE ===
-idle_mode = False
-pulse_event = threading.Event()
-
-def idle_led_pulse():
-    while not pulse_event.is_set():
-        for _ in range(100):
-            if pulse_event.is_set():
-                return
-            val = (math.sin(time.time() * 2) + 1) / 2
-            led_g.value = val
-            led_b.value = 1 - val
-            time.sleep(0.05)
-        set_led(0, 0, 0)
-
-# === UTILITIES ===
-def quick_flash(r=0, g=0, b=0, duration=0.2):
-    set_led(r, g, b)
-    time.sleep(duration)
-    set_led(0, 0, 0)
-
-def set_error_led():
-    set_led(r=1, g=0, b=0)
-
-def startup_sequence():
-    log("[SYSTEM] Running startup LED sequence...")
-    colors = [
-        (1, 0, 0), (1, 0.5, 0), (1, 1, 0), (0, 1, 0),
-        (0, 0, 1), (0.29, 0, 0.51), (0.56, 0, 1),
-    ]
-    for r, g, b in colors:
-        set_led(r, g, b)
-        time.sleep(0.2)
-    set_led(0, 0, 0)
-    time.sleep(0.3)
-    set_led(1, 1, 1)
-    time.sleep(0.2)
-    set_led(0, 0, 0)
-    log("[SYSTEM] LED sequence complete.")
+led_r = PWMLED(24); led_g = PWMLED(23); led_b = PWMLED(22)
+def set_led(r=0,g=0,b=0):
+    led_r.value, led_g.value, led_b.value = r, g, b
+def quick_flash(r=0,g=0,b=0,duration=0.2):
+    set_led(r,g,b); time.sleep(duration); set_led(0,0,0)
 
 # === STATE ===
+idle_mode = False
 highlight_lock = threading.Lock()
 highlighting = []
 highlight_led_stop = None
-current_csv_path = None
 session_id = uuid.uuid4().hex[:8]
 
-# === AUDIO STREAMING ===
+# === STREAM & SAVE AUDIO ===
 def stream_audio():
-    # Start pipelined recording and amplification (raw PCM in/out)
-    arecord = subprocess.Popen([
-        'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', str(SAMPLE_RATE), '-c', '1', '-t', 'raw', '-q', '-'
-    ], stdout=subprocess.PIPE)
-    sox = subprocess.Popen([
-        'sox', '-t', 'raw', '-r', str(SAMPLE_RATE), '-e', 'signed', '-b', '16', '-c', '1', '-',
-        '-t', 'raw', '-', 'gain', '10'
-    ], stdin=arecord.stdout, stdout=subprocess.PIPE)
+    global idle_mode, session_id
 
-    while True:
-        if idle_mode:
-            time.sleep(0.1)
-            continue
-        # Indicate streaming
-        set_led(r=0, g=1, b=0)
-        chunk = sox.stdout.read(CHUNK_SIZE)
-        if not chunk:
-            break
-        # Send raw PCM chunk
-        files = {'audio_chunk': ('audio.raw', chunk, 'application/octet-stream')}
-        data = {'api_key': API_KEY, 'device_id': DEVICE_ID, 'session_id': session_id}
-        try:
-            r = requests.post(UPLOAD_URL, files=files, data=data)
-            log(f"[STREAM] Chunk uploaded, status {r.status_code}")
-        except Exception as e:
-            log(f"[STREAM] Error uploading chunk: {e}", level='error')
-        time.sleep(0.1)
+    # Prepare local WAV file
+    wav_path = os.path.join(AUDIO_DIR, f"{session_id}.wav")
+    local_wav = open(wav_path, 'wb')
 
-# === HIGHLIGHT HANDLING ===
+    # Launch arecord with larger buffers
+    arecord_cmd = [
+        'arecord',
+        '-D', 'plughw:1,0',
+        '-f', 'S16_LE',
+        '-r', str(SAMPLE_RATE),
+        '-c', str(CHANNELS),
+        '--buffer-size', str(ARECORD_BUFFER_SIZE),
+        '--period-size', str(ARECORD_PERIOD_SIZE),
+        '-t', 'raw', '-q', '-'
+    ]
+    current_arecord = subprocess.Popen(arecord_cmd, stdout=subprocess.PIPE)
+
+    # Amplify and wrap to WAV
+    sox_cmd = [
+        'sox',
+        '-t', 'raw', '-r', str(SAMPLE_RATE), '-e', 'signed', '-b', '16', '-c', str(CHANNELS), '-',
+        '-t', 'wav', '-','gain','10'
+    ]
+    sox_proc = subprocess.Popen(sox_cmd, stdin=current_arecord.stdout, stdout=subprocess.PIPE)
+
+    log("[STREAM] Starting audio stream...", 'info')
+    set_led(0,1,0)  # green = streaming
+
+    try:
+        while not idle_mode:
+            # Blocking read exactly CHUNK_SIZE bytes (≈4s of audio)
+            chunk = sox_proc.stdout.read(CHUNK_SIZE)
+            if not chunk:
+                break
+
+            # 1) Save locally
+            local_wav.write(chunk)
+            local_wav.flush()
+
+            # 2) Upload chunk
+            files = {
+                'audio_chunk': ('chunk.wav', chunk, 'audio/wav')
+            }
+            data = {
+                'api_key': API_KEY,
+                'device_id': DEVICE_ID,
+                'session_id': session_id
+            }
+            resp = requests.post(UPLOAD_URL, files=files, data=data)
+            log(f"[STREAM] Chunk uploaded, status {resp.status_code}")
+    finally:
+        # clean up
+        local_wav.close()
+        current_arecord.terminate()
+        sox_proc.terminate()
+        set_led(0,0,0)
+        log("[STREAM] Audio stream stopped.", 'info')
+
+# === HIGHLIGHT BUTTON ===
 def on_highlight_pressed():
-    global highlight_led_stop, current_csv_path
-    press_time = datetime.datetime.now()
-    start_time = press_time - datetime.timedelta(seconds=10)
-    end_time = press_time + datetime.timedelta(seconds=10)
-
-    log(f"[HIGHLIGHT] Start: {start_time}, End: {end_time}")
+    global highlight_led_stop
+    t0 = datetime.datetime.now() - datetime.timedelta(seconds=10)
+    t1 = datetime.datetime.now()
+    t2 = t1 + datetime.timedelta(seconds=10)
     with highlight_lock:
-        highlighting.append((start_time, press_time, end_time))
-    if current_csv_path:
-        with open(current_csv_path, 'a') as f:
-            f.write(f"{start_time},{press_time},{end_time}\n")
+        highlighting.append((t0,t1,t2))
+    # append CSV
+    csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
+    with open(csv_path, 'a') as f:
+        f.write(f"{t0},{t1},{t2}\n")
+    # LED pulse
     if highlight_led_stop:
         highlight_led_stop.set()
-    highlight_led_stop = pulse_led(r=0, g=1, b=0, duration=5*60)
-
-# === CSV UPLOAD ===
-def upload_csv():
-    global highlight_led_stop
-    csvs = glob.glob(os.path.join(AUDIO_DIR, "*.csv"))
-    path = csvs[0] if csvs else None
-    if not path:
-        log("[UPLOAD] No CSV to upload", level='warning')
-        return
-    with open(path, 'rb') as f:
-        files = {'file': f}
-        data = {'api_key': API_KEY, 'device_id': DEVICE_ID, 'session_id': session_id}
-        try:
-            r = requests.post(UPLOAD_URL, files=files, data=data)
-            log(f"[UPLOAD] CSV upload status {r.status_code}")
-            if r.status_code == 200:
-                os.remove(path)
-                quick_flash(b=1)
-            else:
-                quick_flash(r=1)
-        except Exception as e:
-            log(f"[UPLOAD] CSV upload error: {e}", level='error')
+    highlight_led_stop = threading.Event()
+    threading.Thread(target=lambda: pulse_led(0,1,0, duration=5*60), daemon=True).start()
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
-    global idle_mode, last_upload_time, pulse_event
+    global idle_mode, last_upload_time, session_id
     now = time.time()
     if now - last_upload_time < UPLOAD_DEBOUNCE_SEC:
-        log("[UPLOAD] Debounced press ignored.")
         return
     last_upload_time = now
 
     if not idle_mode:
-        log("[UPLOAD] Entering idle mode; uploading CSV and pausing stream.")
+        # stop streaming, upload CSV
         idle_mode = True
-        pulse_event.clear()
-        threading.Thread(target=idle_led_pulse, daemon=True).start()
-        upload_csv()
+        log("[UPLOAD] Stopping stream & uploading CSV...", 'info')
+        # upload CSV
+        csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
+        if os.path.isfile(csv_path):
+            with open(csv_path,'rb') as f:
+                files = {'file': f}
+                data = {'api_key': API_KEY,'device_id':DEVICE_ID,'session_id':session_id}
+                resp = requests.post(UPLOAD_URL, files=files, data=data)
+                log(f"[UPLOAD] CSV upload status {resp.status_code}")
+        quick_flash(0,0,1)
     else:
-        log("[UPLOAD] Resuming streaming.")
+        # start new session
+        session_id = uuid.uuid4().hex[:8]
         idle_mode = False
-        pulse_event.set()
-        set_led(0, 0, 0)
+        threading.Thread(target=stream_audio, daemon=True).start()
+        quick_flash(0,1,0)
 
+# bind buttons
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
-BUTTON_UPLOAD.when_pressed = on_upload_pressed
+BUTTON_UPLOAD.when_pressed    = on_upload_pressed
 
-# === MAIN LOOP ===
-def main():
-    global current_csv_path
-    # Startup messages and instructions
+# === MAIN ===
+if __name__ == "__main__":
     print("[SYSTEM] Starting Scribe Recorder...")
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
-    print(f"Device ID: {DEVICE_ID}")
-    print(f"Audio Directory: {AUDIO_DIR}")
-    print(f"Log file: {LOG_PATH}")
+    print(f"[SYSTEM] Device ID: {DEVICE_ID}")
+    print(f"[SYSTEM] Audio Directory: {AUDIO_DIR}")
+    print("[SYSTEM] Log file: " + LOG_PATH)
     print("Welcome to the Scribe Audio Recorder!")
-    print("Audio will stream continuously in ~4-second raw PCM chunks.")
-    print("Press the green button (GPIO27) to mark highlights.")
-    print("Press the blue button (GPIO17) to pause streaming and upload highlights CSV, or to resume streaming.")
-    print("LED status:")
-    print("  Green: Recording/streaming")
-    print("  Pulsing Green: Highlight registered")
-    print("  Pulsing Green/Blue: Idle mode (waiting, CSV upload)")
+    print("Audio recording will start automatically.")
+    print("Audio is sent to BuckleyWiley.com for processing.")
+    print("Green button: Highlight   Blue button: Stop/Upload CSV or Resume")
+    print("LEDs:")
+    print("  Green: Streaming audio")
+    print("  Pulsing Green: Highlighting")
+    print("  Blue flash: CSV upload")
+    print("  Off: idle")
     print("  Red: Error")
     print("  White flash: Startup complete")
 
-    current_csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
-
-    startup_sequence()
+    # kickoff
     threading.Thread(target=stream_audio, daemon=True).start()
 
+    # keep main alive
     while True:
         time.sleep(1)
-
-if __name__ == "__main__":
-    main()
