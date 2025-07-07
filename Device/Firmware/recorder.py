@@ -74,34 +74,38 @@ def led_controller():
     while True:
         now = time.time()
 
-        # Highlight pulse only during recording
-        if not idle_mode and highlight_start and now < highlight_until:
-            phase     = ((now - highlight_start) % pulse_period) / pulse_period
-            brightness = (math.sin(2 * math.pi * phase) + 1) / 2
-            set_led(0, brightness, 0)
-
-        # Idle mode: smooth crossfade starting at blue
-        elif idle_mode:
+        # If recording stopped, drop any highlight
+        if idle_mode:
+            highlight_until = 0
+            # Smooth crossfade idle, equal-power fade using sine/cosine
             phase = ((now - crossfade_start_time) % crossfade_period) / crossfade_period
-            g_val = phase
-            b_val = 1 - phase
+            g_val = math.sin(phase * math.pi / 2)
+            b_val = math.cos(phase * math.pi / 2)
             set_led(0, g_val, b_val)
             recording_start_time = None
 
-        # Recording mode without highlight
         else:
-            if recording_start_time is None:
-                recording_start_time = now
-                highlight_until = 0
-            elapsed = now - recording_start_time
-            if elapsed < 5:
-                # blue pulse for first 5s
-                phase     = (elapsed % pulse_period) / pulse_period
+            # Highlight override during recording
+            if highlight_start and now < highlight_until:
+                phase     = ((now - highlight_start) % pulse_period) / pulse_period
                 brightness = (math.sin(2 * math.pi * phase) + 1) / 2
-                set_led(0, 0, brightness)
+                set_led(0, brightness, 0)
+
             else:
-                # solid green
-                set_led(0, 1, 0)
+                # Recording mode without highlight or after highlight expired
+                if recording_start_time is None:
+                    recording_start_time = now
+                    # reset crossfade start for when we return to idle
+                    crossfade_start_time = now
+                elapsed = now - recording_start_time
+                if elapsed < 5:
+                    # blue pulse for first 5s of recording
+                    phase     = (elapsed % pulse_period) / pulse_period
+                    brightness = (math.sin(2 * math.pi * phase) + 1) / 2
+                    set_led(0, 0, brightness)
+                else:
+                    # solid green after 5s
+                    set_led(0, 1, 0)
 
         time.sleep(refresh_rate)
 
@@ -172,15 +176,11 @@ def on_highlight_pressed():
     csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
     with open(csv_path, 'a') as f:
         f.write(entry)
-
+    # Immediate upload of CSV
+    async_upload(entry.encode('utf-8'), True)
+    # Start 10s highlight pulse
     highlight_start = time.time()
     highlight_until = highlight_start + 10
-
-    threading.Thread(
-        target=async_upload,
-        args=(entry.encode('utf-8'), True),
-        daemon=True
-    ).start()
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
@@ -193,8 +193,7 @@ def on_upload_pressed():
     if not idle_mode:
         idle_mode = True
         crossfade_start_time = now
-        log("[UPLOAD] Stopping & sending highlights CSV…")
-        on_highlight_pressed()
+        log("[UPLOAD] Stopping recording…")
     else:
         session_id = uuid.uuid4().hex[:8]
         idle_mode = False
