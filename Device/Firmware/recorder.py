@@ -16,14 +16,19 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
+# Updated endpoint for streaming and CSV uploads
 UPLOAD_URL = 'https://buckleywiley.com/Scribe/upload2.php'
 API_KEY = '@YourPassword123'
-BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)
-BUTTON_UPLOAD = Button(17, bounce_time=0.1)
-CHUNK_DURATION = 0.5 * 60  # 30 minutes, unused but retained
-MAX_UPLOADED = 5
-last_upload_time = 0
+# Button assignments: GPIO17 = blue button (upload), GPIO27 = green button (highlight)
+BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)  # Green button
+BUTTON_UPLOAD = Button(17, bounce_time=0.1)     # Blue button
 UPLOAD_DEBOUNCE_SEC = 2.0  # Prevent triggering more than once every 2 seconds
+
+# Chunk settings to upload ~4s of audio per upload
+SAMPLE_RATE = 88200            # samples per second
+BYTES_PER_SAMPLE = 2           # 16-bit audio => 2 bytes
+CHUNK_DURATION_SEC = 4         # seconds per chunk
+CHUNK_SIZE = SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_DURATION_SEC  # bytes per chunk
 
 # === LOGGING SETUP ===
 LOG_PATH = os.path.join(SCRIPT_DIR, 'scribe.log')
@@ -66,21 +71,22 @@ def pulse_led(r=0, g=0, b=0, duration=10, delay=0.05):
     thread.start()
     return stop_event
 
-# === TRIPLE TAP DETECTION / IDLE MODE ===
+# === IDLE MODE ===
 idle_mode = False
 pulse_event = threading.Event()
 
 def idle_led_pulse():
     while not pulse_event.is_set():
         for _ in range(100):
-            if pulse_event.is_set(): return
+            if pulse_event.is_set():
+                return
             val = (math.sin(time.time() * 2) + 1) / 2
             led_g.value = val
             led_b.value = 1 - val
             time.sleep(0.05)
         set_led(0, 0, 0)
 
-# === UTILS ===
+# === UTILITIES ===
 def quick_flash(r=0, g=0, b=0, duration=0.2):
     set_led(r, g, b)
     time.sleep(duration)
@@ -111,19 +117,15 @@ highlighting = []
 highlight_led_stop = None
 current_csv_path = None
 session_id = uuid.uuid4().hex[:8]
-session_part = 1
 
 # === AUDIO STREAMING ===
 def stream_audio():
-    """
-    Continuously record, amplify, and stream audio chunks to the server.
-    """
-    # arecord -> sox pipeline
+    # Start pipelined recording and amplification
     arecord = subprocess.Popen([
-        'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', '88200', '-c', '1', '-t', 'raw', '-q', '-'
+        'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', str(SAMPLE_RATE), '-c', '1', '-t', 'raw', '-q', '-'
     ], stdout=subprocess.PIPE)
     sox = subprocess.Popen([
-        'sox', '-t', 'raw', '-r', '16000', '-e', 'signed', '-b', '16', '-c', '1', '-',
+        'sox', '-t', 'raw', '-r', str(SAMPLE_RATE), '-e', 'signed', '-b', '16', '-c', '1', '-',
         '-t', 'wav', '-', 'gain', '10'
     ], stdin=arecord.stdout, stdout=subprocess.PIPE)
 
@@ -131,19 +133,21 @@ def stream_audio():
         if idle_mode:
             time.sleep(0.1)
             continue
-        chunk = sox.stdout.read(1024)
+        # indicate recording
+        set_led(r=0, g=1, b=0)
+        chunk = sox.stdout.read(CHUNK_SIZE)
         if not chunk:
             break
         files = {'audio_chunk': ('audio.wav', chunk, 'audio/wav')}
         data = {'api_key': API_KEY, 'device_id': DEVICE_ID, 'session_id': session_id}
         try:
             r = requests.post(UPLOAD_URL, files=files, data=data)
-            log(f"[STREAM] Chunk upload status: {r.status_code}")
+            log(f"[STREAM] Chunk uploaded, status {r.status_code}")
         except Exception as e:
             log(f"[STREAM] Error uploading chunk: {e}", level='error')
         time.sleep(0.1)
 
-# === HIGHLIGHT BUTTON ===
+# === HIGHLIGHT HANDLING ===
 def on_highlight_pressed():
     global highlight_led_stop, current_csv_path
     press_time = datetime.datetime.now()
@@ -158,7 +162,6 @@ def on_highlight_pressed():
             f.write(f"{start_time},{press_time},{end_time}\n")
     if highlight_led_stop:
         highlight_led_stop.set()
-        set_led(r=0, g=1, b=0)
     highlight_led_stop = pulse_led(r=0, g=1, b=0, duration=5*60)
 
 # === CSV UPLOAD ===
@@ -169,20 +172,19 @@ def upload_csv():
     if not path:
         log("[UPLOAD] No CSV to upload", level='warning')
         return
-    files = {'file': open(path, 'rb')}
-    data = {'api_key': API_KEY, 'device_id': DEVICE_ID, 'session_id': session_id}
-    try:
-        r = requests.post(UPLOAD_URL, files=files, data=data)
-        log(f"[UPLOAD] CSV status: {r.status_code}")
-        if r.status_code == 200:
-            os.remove(path)
-            quick_flash(b=1)
-        else:
-            quick_flash(r=1)
-    except Exception as e:
-        log(f"[UPLOAD] CSV upload error: {e}", level='error')
-    finally:
-        files['file'].close()
+    with open(path, 'rb') as f:
+        files = {'file': f}
+        data = {'api_key': API_KEY, 'device_id': DEVICE_ID, 'session_id': session_id}
+        try:
+            r = requests.post(UPLOAD_URL, files=files, data=data)
+            log(f"[UPLOAD] CSV upload status {r.status_code}")
+            if r.status_code == 200:
+                os.remove(path)
+                quick_flash(b=1)
+            else:
+                quick_flash(r=1)
+        except Exception as e:
+            log(f"[UPLOAD] CSV upload error: {e}", level='error')
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
@@ -194,18 +196,16 @@ def on_upload_pressed():
     last_upload_time = now
 
     if not idle_mode:
-        # enter idle
-        log("[UPLOAD] Entering idle mode; uploading CSV.")
+        log("[UPLOAD] Entering idle mode; uploading CSV and pausing stream.")
         idle_mode = True
         pulse_event.clear()
         threading.Thread(target=idle_led_pulse, daemon=True).start()
         upload_csv()
     else:
-        # resume streaming
         log("[UPLOAD] Resuming streaming.")
         idle_mode = False
         pulse_event.set()
-        set_led(0,0,0)
+        set_led(0, 0, 0)
 
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed = on_upload_pressed
@@ -213,8 +213,23 @@ BUTTON_UPLOAD.when_pressed = on_upload_pressed
 # === MAIN LOOP ===
 def main():
     global current_csv_path
+    # Startup messages and instructions
     print("[SYSTEM] Starting Scribe Recorder...")
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
+    print(f"[SYSTEM] Device ID: {DEVICE_ID}")
+    print(f"Audio Directory: {AUDIO_DIR}")
+    print("[SYSTEM] Log file: " + LOG_PATH)
+    print("Welcome to the Scribe Audio Recorder!")
+    print("Audio will stream continuously in ~4s chunks.")
+    print("Press the green button (GPIO27) to mark highlights.")
+    print("Press the blue button (GPIO17) to pause streaming and upload highlights CSV, or to resume streaming.")
+    print("The LEDs indicate status:")
+    print("  Green: Recording/streaming")
+    print("  Pulsing Green: Highlight registered")
+    print("  Pulsing Blue: Idle mode (waiting, CSV upload)")
+    print("  Red: Error")
+    print("  White flash: Startup complete")
+
     current_csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
 
     startup_sequence()
