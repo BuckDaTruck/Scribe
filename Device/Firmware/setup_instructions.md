@@ -2,27 +2,25 @@
 
 ## Step 1: Download Minimal OS
 
-Download Raspberry Pi OS Lite (64-bit) from: [https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit](https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit)
-
-Flash it to an SD card using Raspberry Pi Imager or Balena Etcher.
+Download Raspberry Pi OS Lite (64-bit) from the [official Raspberry Pi website](https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit) and flash it to a micro‑SD card using Raspberry Pi Imager or a similar tool.
 
 ---
 
-## Step 2: Configure Boot Settings (Wi-Fi, SSH)
+## Step 2: Configure Boot Settings
 
-After flashing, mount the **boot** partition and add:
+After flashing the card, mount the **boot** partition and add the following files so that the Pi connects to your network and allows SSH on first boot:
 
-### Enable SSH:
+### Enable SSH
 
-Create a blank file:
+Create an empty file named `ssh`:
 
 ```bash
 touch ssh
 ```
 
-### Wi-Fi Configuration:
+### Wi‑Fi Configuration
 
-Create a file named `wpa_supplicant.conf` with:
+Create a file named `wpa_supplicant.conf` with your network details:
 
 ```bash
 country=US
@@ -36,83 +34,84 @@ network={
 
 ---
 
-## Step 3: Add Project Files
+## Step 3: Install Scribe Firmware
 
-Copy the following to the **boot** partition:
-
-- `recorder.py`
-- `setup.sh` (installer script)
-
----
-
-## Step 4: Auto-Run Installer on First Boot
-
-Add to `/etc/rc.local` before `exit 0`:
+1. Boot the Pi and log in via SSH.
+2. Clone this repository:
 
 ```bash
-bash /boot/setup.sh && rm /boot/setup.sh
+git clone https://github.com/BuckDaTruck/Scribe.git
 ```
 
-This will run the installer script once, set everything up, and delete it afterward.
+3. Move the startup script to your home directory (the main directory) so it can be used at boot:
+
+```bash
+cd Scribe/Device/Firmware
+mv start_scribe.sh ~/start_scribe.sh
+chmod +x ~/start_scribe.sh
+```
+
+4. Run the helper script to install dependencies and start the recorder:
+
+```bash
+bash ~/start_scribe.sh
+```
+
+`start_scribe.sh` installs required packages, uses `requirements.txt` to install Python dependencies, and launches `recorder.py`.
+
+If you prefer a manual setup, run the following instead of the script:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3 python3-pip alsa-utils git
+pip3 install -r requirements.txt
+python3 recorder.py
+```
 
 ---
 
-## Step 5: Script Installer (`setup.sh`)
+## Step 4: Optional – Run on Boot
 
-This script installs dependencies and enables the audio logger as a system service:
+After moving `start_scribe.sh` to your home directory, you can configure
+systemd to run it automatically on boot:
 
 ```bash
-#!/bin/bash
+sudo nano /etc/systemd/system/scribe.service
+```
 
-apt update
-apt install -y python3 python3-pip alsa-utils git
-pip3 install requests gpiozero
+Insert:
 
-mkdir -p /home/pi/audio
-mv /boot/recorder.py /home/pi/recorder.py
-chmod +x /home/pi/recorder.py
-
-cat <<EOF | tee /etc/systemd/system/recorder.service
+```ini
 [Unit]
-Description=Audio Recorder
+Description=Scribe Recorder
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/pi/recorder.py
-WorkingDirectory=/home/pi
-StandardOutput=inherit
-StandardError=inherit
+ExecStart=/bin/bash /home/pi/start_scribe.sh
 Restart=always
 User=pi
 
 [Install]
 WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable recorder.service
-systemctl start recorder.service
 ```
-To stop the Scribe service immediately and prevent it from coming back on reboot, you can use systemd’s stop/disable commands:
 
-bash
-Copy
-Edit
-# Stop it right now
-sudo systemctl stop scribe.service
+Enable and start the service:
 
-# Prevent it from starting at boot
-sudo systemctl disable scribe.service
-If you ever want to re-enable it:
-
-bash
-Copy
-Edit
+```bash
+sudo systemctl daemon-reload
 sudo systemctl enable scribe.service
-sudo systemctl start  scribe.service
+sudo systemctl start scribe.service
+```
+
+To stop the service and disable it from starting at boot:
+
+```bash
+sudo systemctl stop scribe.service
+sudo systemctl disable scribe.service
+```
+
 ---
 
-## Step 6: Boot and Deploy
+## Step 5: Record
 
-Insert the SD card into your Pi and power on. It will connect to Wi-Fi, install everything, and begin logging automatically.
-
+After running `start_scribe.sh` or enabling the service, the Pi begins recording immediately. Use the connected buttons to mark highlights and to upload recordings as defined in `recorder.py`.
