@@ -4,7 +4,10 @@
 cd ~
 
 sudo apt-get update
+sudo apt-get install -y fortune python3-pip
 
+
+fortune 
 
 # Remove existing Scribe directory
 sudo rm -rf Scribe
@@ -20,6 +23,3 @@ pip3 install -r requirements.txt
 
 # Run the recorder script with lolcat-ized output
 python3 recorder.py 
-
-
-
