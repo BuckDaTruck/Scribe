@@ -7,6 +7,7 @@ import datetime
 import requests
 import wave
 import logging
+import math
 from gpiozero import Button, PWMLED
 
 # === CONFIG ===
@@ -17,14 +18,14 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 
 UPLOAD_URL       = 'https://buckleywiley.com/Scribe/upload2.php'
 API_KEY          = '@YourPassword123'
-BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)  # green
-BUTTON_UPLOAD    = Button(17, bounce_time=0.1)  # blue
+BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)  # green button
+BUTTON_UPLOAD    = Button(17, bounce_time=0.1)  # blue button
 
 # audio parameters
 SAMPLE_RATE      = 88200
 BYTES_PER_SAMPLE = 2    # 16-bit
 CHANNELS         = 1
-CHUNK_SECONDS    = 1    # ← now 1s
+CHUNK_SECONDS    = 1
 CHUNK_SIZE       = SAMPLE_RATE * BYTES_PER_SAMPLE * CHANNELS * CHUNK_SECONDS
 
 # ALSA tuning
@@ -49,20 +50,65 @@ def log(msg, level='info'):
     getattr(logging, level)(msg)
 
 # === LEDs ===
-led_r = PWMLED(24); led_g = PWMLED(23); led_b = PWMLED(22)
-def set_led(r=0,g=0,b=0):
-    led_r.value, led_g.value, led_b.value = r, g, b
-def quick_flash(r,g,b,duration=0.2):
-    set_led(r,g,b); time.sleep(duration); set_led(0,0,0)
+led_r = PWMLED(24)
+led_g = PWMLED(23)
+led_b = PWMLED(22)
 
-def pulse_led(r,g,b, duration=300, interval=0.5):
-    """Continuously pulse the LED for `duration` seconds."""
-    end = time.time() + duration
-    while time.time() < end:
-        set_led(r,g,b)
-        time.sleep(interval)
-        set_led(0,0,0)
-        time.sleep(interval)
+def set_led(r=0, g=0, b=0):
+    led_r.value, led_g.value, led_b.value = r, g, b
+
+# State for LED controller
+recording_start_time = None
+highlight_start       = None
+highlight_until       = 0
+
+def led_controller():
+    """Background thread: sets LED based on idle/record/highlight state."""
+    global recording_start_time, highlight_start, highlight_until
+
+    crossfade_period = 4.0    # seconds for full blue↔green cycle
+    pulse_period     = 2.0    # seconds for a full pulse up/down
+    refresh_rate     = 0.05   # 50 ms
+
+    while True:
+        now = time.time()
+
+        if idle_mode:
+            # Highlight override?
+            if highlight_start and now < highlight_until:
+                # smooth green pulse
+                phase     = ((now - highlight_start) % pulse_period) / pulse_period
+                brightness = (math.sin(2 * math.pi * phase) + 1) / 2
+                set_led(0, brightness, 0)
+            else:
+                # crossfade blue↔green
+                phase = (now % crossfade_period) / crossfade_period
+                g_val = phase
+                b_val = 1 - phase
+                set_led(0, g_val, b_val)
+
+            # Reset recording timer in case we just stopped
+            recording_start_time = None
+
+        else:
+            # recording mode
+            if recording_start_time is None:
+                recording_start_time = now
+
+            elapsed = now - recording_start_time
+            if elapsed < 5:
+                # pulse blue for first 5 seconds
+                phase     = (elapsed % pulse_period) / pulse_period
+                brightness = (math.sin(2 * math.pi * phase) + 1) / 2
+                set_led(0, 0, brightness)
+            else:
+                # solid green afterwards
+                set_led(0, 1, 0)
+
+            # clear any highlight once recording begins
+            highlight_until = 0
+
+        time.sleep(refresh_rate)
 
 # === UPLOAD WORKER ===
 def async_upload(chunk_bytes, is_csv=False):
@@ -110,46 +156,41 @@ def stream_audio():
     ], stdin=arec.stdout, stdout=subprocess.PIPE)
 
     log("[STREAM] Starting audio…")
-    set_led(0,1,0)
-
     try:
         while not idle_mode:
             chunk = sox.stdout.read(CHUNK_SIZE)
             if not chunk:
                 break
 
-            # write PCM to our WAV
             wf.writeframes(chunk)
-
-            # upload in background
             threading.Thread(target=async_upload, args=(chunk,), daemon=True).start()
 
     finally:
         wf.close()
         arec.terminate()
         sox.terminate()
-        set_led(0,0,0)
         log("[STREAM] Stopped.")
 
 # === HIGHLIGHT ===
 def on_highlight_pressed():
+    global highlight_start, highlight_until
     t0 = datetime.datetime.now() - datetime.timedelta(seconds=10)
     t1 = datetime.datetime.now()
     t2 = t1 + datetime.timedelta(seconds=10)
+    csv_entry = f"{t0},{t1},{t2}\n"
     csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
-    entry = f"{t0},{t1},{t2}\n"
     with open(csv_path, 'a') as f:
-        f.write(entry)
+        f.write(csv_entry)
 
-    # upload CSV in background
+    # schedule 10s of smooth green-pulsing
+    highlight_start = time.time()
+    highlight_until = highlight_start + 10
+
     threading.Thread(
         target=async_upload,
-        args=(entry.encode('utf-8'), True),
+        args=(csv_entry.encode('utf-8'), True),
         daemon=True
     ).start()
-
-    # pulse green for 5 min
-    threading.Thread(target=lambda: pulse_led(0,1,0, duration=300), daemon=True).start()
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
@@ -160,31 +201,39 @@ def on_upload_pressed():
     last_upload_time = now
 
     if not idle_mode:
+        # stop recording
         idle_mode = True
         log("[UPLOAD] Stopping & sending highlights CSV…")
-        on_highlight_pressed()   # reuse CSV upload
-        quick_flash(0,0,1)
+        on_highlight_pressed()   # send final highlight as CSV
     else:
+        # start new recording session
         session_id = uuid.uuid4().hex[:8]
         idle_mode = False
         threading.Thread(target=stream_audio, daemon=True).start()
-        quick_flash(0,1,0)
 
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed    = on_upload_pressed
 
 # === MAIN ===
 if __name__ == "__main__":
-    setup_msgs = [
+    for m in [
       "[SYSTEM] Starting Scribe Recorder…",
       f"[SYSTEM] Device ID: {DEVICE_ID}",
       f"[SYSTEM] Audio Dir: {AUDIO_DIR}",
       f"[SYSTEM] Log File: {LOG_PATH}"
-    ]
-    for m in setup_msgs:
-        log(m)
-    quick_flash(1,1,1, duration=0.1)  # white flash
+    ]: log(m)
+
+    # Start LED manager
+    threading.Thread(target=led_controller, daemon=True).start()
+
+    # small white flash at startup
+    set_led(1,1,1)
+    time.sleep(0.1)
+    set_led(0,0,0)
+
+    # begin streaming immediately
     threading.Thread(target=stream_audio, daemon=True).start()
 
+    # keep main thread alive
     while True:
         time.sleep(1)

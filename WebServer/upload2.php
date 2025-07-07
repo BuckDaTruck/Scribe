@@ -1,8 +1,14 @@
 <?php
-$allowedExtensions = ['wav','mp3','csv','opus'];
+// Configuration
+$allowedExtensions = ['wav', 'mp3', 'csv', 'opus', 'raw'];
 $uploadBaseDir    = 'uploads/';
 $logFile          = 'upload_log.csv';
 $apiKey           = '@YourPassword123';
+
+// For raw→WAV conversion
+define('RAW_SAMPLE_RATE',   88200);
+define('RAW_CHANNELS',      1);
+define('RAW_BITS_PER_SAMPLE', 16);
 
 // ————————————————————————————————————————————————————————————————
 // 1) AUTHENTICATE
@@ -48,41 +54,63 @@ foreach ($_FILES as $field => $file) {
     }
 
     // ————————————————————————————————————————
-    // A) WAV CHUNK STREAMING
+    // A) WAV or RAW AUDIO CHUNK STREAMING
     // ————————————————————————————————————————
-    if ($field === 'audio_chunk' && $ext === 'wav') {
+    if ($field === 'audio_chunk' && in_array($ext, ['wav','raw'])) {
         $streamPath = $sessionDir . 'stream.wav';
         $data       = file_get_contents($file['tmp_name']);
 
-        // First chunk? write full header+data
-        if (!file_exists($streamPath)) {
-            file_put_contents($streamPath, $data);
-        } else {
-            // Strip the 44-byte header, append only PCM data
+        // If RAW, data is pure PCM; if WAV, strip header
+        if ($ext === 'wav') {
+            // WAV: skip 44-byte header
             $pcmData = substr($data, 44);
+        } else {
+            // RAW: use full buffer as PCM
+            $pcmData = $data;
+        }
+
+        // First chunk? write WAV header + PCM
+        if (!file_exists($streamPath)) {
+            // Build standard 44-byte WAV header with placeholders
+            $byteRate    = RAW_SAMPLE_RATE * RAW_CHANNELS * (RAW_BITS_PER_SAMPLE/8);
+            $blockAlign  = RAW_CHANNELS * (RAW_BITS_PER_SAMPLE/8);
+
+            $header  = 'RIFF' . pack('V', 0) . 'WAVE';
+            $header .= 'fmt ' . pack('V', 16);          // Subchunk1Size
+            $header .= pack('v', 1);                    // PCM format
+            $header .= pack('v', RAW_CHANNELS);
+            $header .= pack('V', RAW_SAMPLE_RATE);
+            $header .= pack('V', $byteRate);
+            $header .= pack('v', $blockAlign);
+            $header .= pack('v', RAW_BITS_PER_SAMPLE);
+            $header .= 'data' . pack('V', 0);           // Subchunk2Size
+
+            // Write header + first PCM block
+            file_put_contents($streamPath, $header . $pcmData);
+        } else {
+            // Append PCM only
             file_put_contents($streamPath, $pcmData, FILE_APPEND);
         }
 
-        // Now fix up the WAV header sizes
+        // Patch WAV header sizes
         $totalSize = filesize($streamPath);
-        $dataSize  = $totalSize - 44;       // PCM bytes
-        $riffSize  = $totalSize - 8;        // RIFF chunk size = fileSize - 8
+        $dataSize  = $totalSize - 44;
+        $riffSize  = $totalSize - 8;
 
-        // Open for read+write and patch header fields
         $fp = fopen($streamPath, 'r+b');
         if ($fp) {
-            // At offset 4, 4-byte little-endian RIFF size
+            // RIFF chunk size at offset 4
             fseek($fp, 4);
             fwrite($fp, pack('V', $riffSize));
-            // At offset 40, 4-byte little-endian data-chunk size
+            // data chunk size at offset 40
             fseek($fp, 40);
             fwrite($fp, pack('V', $dataSize));
             fclose($fp);
         }
 
-        echo "Appended WAV chunk ({$size} bytes). Total: {$totalSize} bytes\n";
+        echo "Appended audio chunk ({$size} bytes). Total WAV size: {$totalSize} bytes\n";
 
-        // Log it
+        // Log
         $logEntry = [
             $timestamp,
             $clientIp,
@@ -109,7 +137,7 @@ foreach ($_FILES as $field => $file) {
 
     echo "Uploaded: {$origName}\n";
 
-    // Log standard file upload
+    // Log
     $logEntry = [
         $timestamp,
         $clientIp,
