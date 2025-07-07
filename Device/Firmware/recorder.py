@@ -11,7 +11,7 @@ import math
 from gpiozero import Button, PWMLED
 
 # === CONFIG ===
-DEVICE_ID        = "Buckley-Scribe-v1.1"
+DEVICE_ID        = "Buckley-Scribe-v1.2"
 SCRIPT_DIR       = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR        = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -121,8 +121,13 @@ def async_upload(chunk_bytes, is_csv=False):
         resp = requests.post(UPLOAD_URL, files=files, data=data, timeout=10)
         if resp.status_code != 200:
             log(f"[UPLOAD][ERROR] {resp.status_code}: {resp.text}", 'error')
+            if is_csv:
+                log("[UPLOAD] CSV upload failed. Check server logs for details.", 'error')
+            else:
+                log("[UPLOAD] Audio chunk upload failed. Check server logs for details.", 'error')
         else:
             log(f"[UPLOAD] Success {resp.status_code}")
+            print("CSV uploaded." if is_csv else "Audio chunk uploaded.")
     except Exception as e:
         log(f"[UPLOAD][EXCEPTION] {e}", 'error')
 
