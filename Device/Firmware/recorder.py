@@ -67,27 +67,27 @@ crossfade_start_time  = time.time()
 def led_controller():
     global recording_start_time, highlight_start, highlight_until, crossfade_start_time
 
-    crossfade_period = 4.0    # seconds for blue↔green cycle
+    crossfade_period = 4.0    # seconds for full blue↔green cycle
     pulse_period     = 2.0    # pulse period for highlights and blue pulses
     refresh_rate     = 0.05   # 50 ms update
 
     while True:
         now = time.time()
 
-        # If recording stopped, drop any highlight
         if idle_mode:
+            # end any highlight
             highlight_until = 0
-            # Smooth crossfade idle, equal-power fade using sine/cosine
+            # smooth crossfade idle between blue and green and back
             phase = ((now - crossfade_start_time) % crossfade_period) / crossfade_period
-            g_val = math.sin(phase * math.pi / 2)
-            b_val = math.cos(phase * math.pi / 2)
+            g_val = 0.5 * (1 - math.cos(2 * math.pi * phase))
+            b_val = 0.5 * (1 + math.cos(2 * math.pi * phase))
             set_led(0, g_val, b_val)
             recording_start_time = None
 
         else:
             # Highlight override during recording
             if highlight_start and now < highlight_until:
-                phase     = ((now - highlight_start) % pulse_period) / pulse_period
+                phase      = ((now - highlight_start) % pulse_period) / pulse_period
                 brightness = (math.sin(2 * math.pi * phase) + 1) / 2
                 set_led(0, brightness, 0)
 
@@ -95,16 +95,16 @@ def led_controller():
                 # Recording mode without highlight or after highlight expired
                 if recording_start_time is None:
                     recording_start_time = now
-                    # reset crossfade start for when we return to idle
+                    # reset fade when returning to idle later
                     crossfade_start_time = now
                 elapsed = now - recording_start_time
                 if elapsed < 5:
-                    # blue pulse for first 5s of recording
-                    phase     = (elapsed % pulse_period) / pulse_period
+                    # blue pulse for first 5s
+                    phase      = (elapsed % pulse_period) / pulse_period
                     brightness = (math.sin(2 * math.pi * phase) + 1) / 2
                     set_led(0, 0, brightness)
                 else:
-                    # solid green after 5s
+                    # solid green afterwards
                     set_led(0, 1, 0)
 
         time.sleep(refresh_rate)
@@ -169,6 +169,7 @@ def stream_audio():
 # === HIGHLIGHT ===
 def on_highlight_pressed():
     global highlight_start, highlight_until
+    # record timestamps
     t0 = datetime.datetime.now() - datetime.timedelta(seconds=10)
     t1 = datetime.datetime.now()
     t2 = t1 + datetime.timedelta(seconds=10)
@@ -176,9 +177,14 @@ def on_highlight_pressed():
     csv_path = os.path.join(AUDIO_DIR, f"{session_id}_Highlights.csv")
     with open(csv_path, 'a') as f:
         f.write(entry)
-    # Immediate upload of CSV
-    async_upload(entry.encode('utf-8'), True)
-    # Start 10s highlight pulse
+    # immediate upload of full CSV
+    try:
+        with open(csv_path, 'rb') as f:
+            csv_bytes = f.read()
+        threading.Thread(target=async_upload, args=(csv_bytes, True), daemon=True).start()
+    except Exception as e:
+        log(f"[HIGHLIGHT][ERROR] CSV upload failed: {e}", 'error')
+    # start highlight pulse
     highlight_start = time.time()
     highlight_until = highlight_start + 10
 
@@ -199,10 +205,10 @@ def on_upload_pressed():
         idle_mode = False
         threading.Thread(target=stream_audio, daemon=True).start()
 
+# === SETUP BUTTONS & MAIN ===
 BUTTON_HIGHLIGHT.when_pressed = on_highlight_pressed
 BUTTON_UPLOAD.when_pressed    = on_upload_pressed
 
-# === MAIN ===
 if __name__ == "__main__":
     for m in [
       "[SYSTEM] Starting Scribe Recorder…",
@@ -212,13 +218,17 @@ if __name__ == "__main__":
     ]:
         log(m)
 
+    # start LED controller
     threading.Thread(target=led_controller, daemon=True).start()
 
+    # flash to show startup
     set_led(1,1,1)
     time.sleep(0.1)
     set_led(0,0,0)
 
+    # start audio streaming
     threading.Thread(target=stream_audio, daemon=True).start()
 
+    # keep main alive
     while True:
         time.sleep(1)
