@@ -27,7 +27,7 @@ UPLOAD_DEBOUNCE_SEC = 2.0  # Prevent triggering more than once every 2 seconds
 # Chunk settings to upload ~4s of audio per upload
 SAMPLE_RATE = 88200            # samples per second
 BYTES_PER_SAMPLE = 2           # 16-bit audio => 2 bytes
-CHUNK_DURATION_SEC = 4         # seconds per chunk
+CHUNK_DURATION_SEC = 2         # seconds per chunk
 CHUNK_SIZE = SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_DURATION_SEC  # bytes per chunk
 
 # === LOGGING SETUP ===
