@@ -19,7 +19,7 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 # Updated endpoint for streaming and CSV uploads
 UPLOAD_URL = 'https://buckleywiley.com/Scribe/upload2.php'
 API_KEY = '@YourPassword123'
-# Button assignments: GPIO17 = blue button (upload), GPIO27 = green button (highlight)
+# Button assignments: GPIO17 = blue button (upload/pause), GPIO27 = green button (highlight)
 BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)  # Green button
 BUTTON_UPLOAD = Button(17, bounce_time=0.1)     # Blue button
 UPLOAD_DEBOUNCE_SEC = 2.0  # Prevent triggering more than once every 2 seconds
@@ -120,25 +120,26 @@ session_id = uuid.uuid4().hex[:8]
 
 # === AUDIO STREAMING ===
 def stream_audio():
-    # Start pipelined recording and amplification
+    # Start pipelined recording and amplification (raw PCM in/out)
     arecord = subprocess.Popen([
         'arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', str(SAMPLE_RATE), '-c', '1', '-t', 'raw', '-q', '-'
     ], stdout=subprocess.PIPE)
     sox = subprocess.Popen([
         'sox', '-t', 'raw', '-r', str(SAMPLE_RATE), '-e', 'signed', '-b', '16', '-c', '1', '-',
-        '-t', 'wav', '-', 'gain', '10'
+        '-t', 'raw', '-', 'gain', '10'
     ], stdin=arecord.stdout, stdout=subprocess.PIPE)
 
     while True:
         if idle_mode:
             time.sleep(0.1)
             continue
-        # indicate recording
+        # Indicate streaming
         set_led(r=0, g=1, b=0)
         chunk = sox.stdout.read(CHUNK_SIZE)
         if not chunk:
             break
-        files = {'audio_chunk': ('audio.wav', chunk, 'audio/wav')}
+        # Send raw PCM chunk
+        files = {'audio_chunk': ('audio.raw', chunk, 'application/octet-stream')}
         data = {'api_key': API_KEY, 'device_id': DEVICE_ID, 'session_id': session_id}
         try:
             r = requests.post(UPLOAD_URL, files=files, data=data)
@@ -216,17 +217,17 @@ def main():
     # Startup messages and instructions
     print("[SYSTEM] Starting Scribe Recorder...")
     log(f"[SYSTEM] Recorder started. Device ID: {DEVICE_ID}")
-    print(f"[SYSTEM] Device ID: {DEVICE_ID}")
+    print(f"Device ID: {DEVICE_ID}")
     print(f"Audio Directory: {AUDIO_DIR}")
-    print("[SYSTEM] Log file: " + LOG_PATH)
+    print(f"Log file: {LOG_PATH}")
     print("Welcome to the Scribe Audio Recorder!")
-    print("Audio will stream continuously in ~4s chunks.")
+    print("Audio will stream continuously in ~4-second raw PCM chunks.")
     print("Press the green button (GPIO27) to mark highlights.")
     print("Press the blue button (GPIO17) to pause streaming and upload highlights CSV, or to resume streaming.")
-    print("The LEDs indicate status:")
+    print("LED status:")
     print("  Green: Recording/streaming")
     print("  Pulsing Green: Highlight registered")
-    print("  Pulsing Blue: Idle mode (waiting, CSV upload)")
+    print("  Pulsing Green/Blue: Idle mode (waiting, CSV upload)")
     print("  Red: Error")
     print("  White flash: Startup complete")
 
