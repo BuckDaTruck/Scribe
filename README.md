@@ -28,8 +28,10 @@ The hardware build uses the following components:
 - Two push buttons: one for highlights and one for initiating uploads
 - RGB LED with resistors for visual feedback
 
-Wiring diagrams and a detailed parts list are provided in
+Wiring diagrams are provided in
 [Device/wiring_instructions.md](Device/wiring_instructions.md).
+See [Device/parts_list.md](Device/parts_list.md) for a complete list of
+required components.
 
 ## 3D-Printed Case
 
