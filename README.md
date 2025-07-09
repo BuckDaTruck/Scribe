@@ -35,7 +35,7 @@ required components.
 
 ## 3D-Printed Case
 
-All enclosure files live in the `Cad/` directory. The STL models were
+All enclosure files live in the `Device/Cad/` directory. The STL models were
 printed on an **Anycubic S1** and should be compatible with most desktop
 printers. If you want to modify the design, the original Onshape project
 is available at [this link](https://cad.onshape.com/documents/3eb0c03f667fd218b6465f3e/w/64f544e1ef4dcc4bc9220305/e/b0f011cba6411f833e96eb2d?renderMode=0&uiState=686c31687eb09201081bcbbc).
@@ -71,7 +71,7 @@ to POST files to the server for testing without the device.
 ## Repository Layout
 
 ```
-Cad/            # 3D models and CAD files for the case
+Device/Cad/     # 3D models and CAD files for the case
 Device/         # Firmware, setup scripts and hardware docs
 WebServer/      # PHP endpoint and test client
 README.md       # Project overview (this file)
