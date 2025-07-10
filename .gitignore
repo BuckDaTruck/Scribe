@@ -1,2 +1,5 @@
 # local env vars
 .env.local
+express-audio-api
+node_modules
+pages
