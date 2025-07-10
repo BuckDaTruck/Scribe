@@ -16,7 +16,7 @@ SCRIPT_DIR       = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR        = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-UPLOAD_URL       = 'http://10.101.224.25:3000/api/audio/upload'
+UPLOAD_URL       = 'http://172.20.10.12:3000/api/audio/upload'
 API_KEY          = '@YourPassword123'
 BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)
 BUTTON_UPLOAD    = Button(17, bounce_time=0.1)
