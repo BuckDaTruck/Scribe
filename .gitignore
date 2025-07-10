@@ -3,3 +3,6 @@
 express-audio-api
 node_modules
 pages
+package.json
+package-lock.json
+typescript-audio-api
