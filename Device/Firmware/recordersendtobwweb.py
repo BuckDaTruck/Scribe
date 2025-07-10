@@ -16,7 +16,7 @@ SCRIPT_DIR       = os.path.dirname(os.path.realpath(__file__))
 AUDIO_DIR        = SCRIPT_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-UPLOAD_URL       = 'http://10.101.224.25:3000/api/audio/upload'
+UPLOAD_URL       = 'https://buckleywiley.com/Scribe/upload.php'
 API_KEY          = '@YourPassword123'
 BUTTON_HIGHLIGHT = Button(27, bounce_time=0.1)
 BUTTON_UPLOAD    = Button(17, bounce_time=0.1)
@@ -36,7 +36,6 @@ UPLOAD_DEBOUNCE_SEC = 2.0
 last_upload_time    = 0
 idle_mode           = False
 session_id          = uuid.uuid4().hex[:8]
-chunk_counter       = 0
 
 # === LOGGING ===
 LOG_PATH = os.path.join(SCRIPT_DIR, 'scribe.log')
@@ -111,42 +110,24 @@ def led_controller():
         time.sleep(refresh_rate)
 
 # === UPLOAD WORKER ===
-chunk_counter = 0
-
 def async_upload(chunk_bytes, is_csv=False):
-    global chunk_counter
-    
+    files = {}
     if is_csv:
-        # Skip CSV uploads for now - focus on audio
-        log("[UPLOAD] Skipping CSV upload (not implemented for new API)")
-        return
-    
-    chunk_counter += 1
-    
-    # Convert bytes to list of integers for the API
-    audio_data = list(chunk_bytes)
-    
-    payload = {
-        "userId": DEVICE_ID,
-        "timestamp": int(time.time() * 1000),
-        "audioData": audio_data,
-        "chunkId": f"{session_id}-chunk-{chunk_counter}",
-        "sessionId": session_id
-    }
-    
+        files['file'] = ('highlights.csv', chunk_bytes, 'text/csv')
+    else:
+        files['audio_chunk'] = ('chunk.raw', chunk_bytes, 'audio/raw')
+    data = {'api_key': API_KEY, 'device_id': DEVICE_ID, 'session_id': session_id}
     try:
-        resp = requests.post(
-            UPLOAD_URL, 
-            json=payload,
-            headers={'Content-Type': 'application/json'},
-            timeout=10
-        )
+        resp = requests.post(UPLOAD_URL, files=files, data=data, timeout=10)
         if resp.status_code != 200:
             log(f"[UPLOAD][ERROR] {resp.status_code}: {resp.text}", 'error')
+            if is_csv:
+                log("[UPLOAD] CSV upload failed. Check server logs for details.", 'error')
+            else:
+                log("[UPLOAD] Audio chunk upload failed. Check server logs for details.", 'error')
         else:
-            response_data = resp.json()
-            log(f"[UPLOAD] Success: {response_data.get('message', 'OK')}")
-            print(f"Audio chunk {chunk_counter} uploaded.")
+            log(f"[UPLOAD] Success {resp.status_code}")
+            print("CSV uploaded." if is_csv else "Audio chunk uploaded.")
     except Exception as e:
         log(f"[UPLOAD][EXCEPTION] {e}", 'error')
 
@@ -214,7 +195,7 @@ def on_highlight_pressed():
 
 # === UPLOAD BUTTON ===
 def on_upload_pressed():
-    global idle_mode, last_upload_time, session_id, crossfade_start_time, chunk_counter
+    global idle_mode, last_upload_time, session_id, crossfade_start_time
     now = time.time()
     if now - last_upload_time < UPLOAD_DEBOUNCE_SEC:
         return
@@ -226,7 +207,6 @@ def on_upload_pressed():
         log("[UPLOAD] Stopping recording…")
     else:
         session_id = uuid.uuid4().hex[:8]
-        chunk_counter = 0  # Reset chunk counter for new session
         idle_mode = False
         threading.Thread(target=stream_audio, daemon=True).start()
 
@@ -253,7 +233,7 @@ if __name__ == "__main__":
         "[SYSTEM] - Recording Mode: Blue pulse for the first 5 seconds, then solid green.",
         "[SYSTEM] - Highlight: Green pulse for 10 seconds.",
         "[SYSTEM] Upload Server:",
-        f"[SYSTEM] - Audio chunks are uploaded to: {UPLOAD_URL}"
+        f"[SYSTEM] - Audio and highlights are uploaded to: {UPLOAD_URL}"
     ]
 
     for line in instructions:
